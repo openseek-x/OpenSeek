@@ -1,0 +1,120 @@
+name: Sync upstream
+run-name: Sync upstream · ${{ github.event_name }}
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 22 * * *'
+      timezone: Asia/Shanghai
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  TARGET_BRANCH: main
+  UPSTREAM_BRANCH: master
+  UPSTREAM_REPOSITORY: deepseek-ai/deepseek-harness
+
+jobs:
+  sync:
+    name: Check and propose upstream merge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          ref: main
+
+      - name: Fetch official upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream "${UPSTREAM_BRANCH}"
+
+      - name: Inspect upstream state
+        id: inspect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_sha="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
+          short_sha="${upstream_sha:0:12}"
+          sync_branch="upstream-sync/${short_sha}"
+          {
+            echo "sync_branch=${sync_branch}"
+            echo "sync_needed=false"
+            echo "short_sha=${short_sha}"
+            echo "upstream_sha=${upstream_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+          if git merge-base --is-ancestor "${upstream_sha}" HEAD; then
+            echo "Official upstream ${upstream_sha} is already contained in ${TARGET_BRANCH}." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          open_sync_pr="$(gh pr list --repo "${GITHUB_REPOSITORY}" --base "${TARGET_BRANCH}" --state open --json headRefName,url --jq 'map(select(.headRefName | startswith("upstream-sync/"))) | .[0].url // ""')"
+          if [ -n "${open_sync_pr}" ]; then
+            echo "An upstream sync pull request is already open: ${open_sync_pr}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          existing_tip_pr="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state all --head "${sync_branch}" --json state,url --jq 'if length == 0 then "" else "\(.[0].state):\(.[0].url)" end')"
+          if [ -n "${existing_tip_pr}" ]; then
+            echo "Upstream ${upstream_sha} already has a pull request (${existing_tip_pr}); it will not be recreated." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --heads origin "refs/heads/${sync_branch}" >/dev/null 2>&1; then
+            echo "::error::Remote branch ${sync_branch} exists without a pull request; inspect it before retrying."
+            exit 1
+          fi
+
+          echo "sync_needed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Merge upstream into a review branch
+        if: steps.inspect.outputs.sync_needed == 'true'
+        env:
+          SYNC_BRANCH: ${{ steps.inspect.outputs.sync_branch }}
+          UPSTREAM_SHA: ${{ steps.inspect.outputs.upstream_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${SYNC_BRANCH}"
+          if ! git merge --no-ff -m "chore(sync): merge upstream ${UPSTREAM_SHA}" "${UPSTREAM_SHA}"; then
+            git merge --abort || true
+            echo "::error::Official upstream conflicts with OpenSeek ${TARGET_BRANCH}; resolve the merge manually."
+            exit 1
+          fi
+          git push origin "HEAD:refs/heads/${SYNC_BRANCH}"
+
+      - name: Open upstream sync pull request
+        if: steps.inspect.outputs.sync_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHORT_SHA: ${{ steps.inspect.outputs.short_sha }}
+          SYNC_BRANCH: ${{ steps.inspect.outputs.sync_branch }}
+          UPSTREAM_SHA: ${{ steps.inspect.outputs.upstream_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pull_request_url="$(gh pr create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --base "${TARGET_BRANCH}" \
+            --head "${SYNC_BRANCH}" \
+            --title "chore(sync): merge deepseek-harness@${SHORT_SHA}" \
+            --label "kind/cleanup" \
+            --label "area/infra" \
+            --body "Automated merge of ${UPSTREAM_REPOSITORY}@${UPSTREAM_SHA}. Review the OpenSeek-specific desktop and release changes before merging. This workflow never merges the pull request.")"
+          echo "Created ${pull_request_url}" >> "${GITHUB_STEP_SUMMARY}"

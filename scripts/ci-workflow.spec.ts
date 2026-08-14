@@ -235,6 +235,52 @@ describe('E2B e2e workflow', () => {
   })
 })
 
+describe('Upstream sync workflow', () => {
+  it('checks daily in Shanghai and only proposes a reviewed merge branch', () => {
+    const workflow = loadWorkflow('.github/workflows/upstream-sync.yml')
+    if (!isRecord(workflow.on) || !Array.isArray(workflow.on.schedule)) {
+      throw new TypeError('Upstream sync workflow must define a schedule')
+    }
+    const sync = workflowJob(workflow, 'sync')
+    if (!Array.isArray(sync.steps)) throw new TypeError('Upstream sync job must define steps')
+
+    expect(workflow.on.workflow_dispatch).toBeNull()
+    expect(workflow.on.schedule).toEqual([{ cron: '0 22 * * *', timezone: 'Asia/Shanghai' }])
+    expect(workflow.permissions).toEqual({
+      contents: 'write',
+      issues: 'write',
+      'pull-requests': 'write',
+    })
+    expect(workflow.concurrency).toEqual({ group: 'upstream-sync', 'cancel-in-progress': false })
+    expect(workflow.env).toEqual({
+      TARGET_BRANCH: 'main',
+      UPSTREAM_BRANCH: 'master',
+      UPSTREAM_REPOSITORY: 'deepseek-ai/deepseek-harness',
+    })
+
+    const steps = sync.steps.filter(isRecord)
+    const checkout = steps.find(step => step.uses === 'actions/checkout@v6')
+    const commands = steps
+      .map(step => step.run)
+      .filter((run): run is string => typeof run === 'string')
+      .join('\n')
+
+    expect(checkout).toMatchObject({
+      with: { 'fetch-depth': 0, 'persist-credentials': true, ref: 'main' },
+    })
+    expect(commands).toContain('git merge-base --is-ancestor')
+    expect(commands).toContain('--state open')
+    expect(commands).toContain('git merge --no-ff')
+    expect(commands).toContain('git merge --abort')
+    expect(commands).toContain('git push origin "HEAD:refs/heads/${SYNC_BRANCH}"')
+    expect(commands).toContain('gh pr create')
+    expect(commands).toContain('--label "kind/cleanup"')
+    expect(commands).toContain('--label "area/infra"')
+    expect(commands).not.toContain('gh pr merge')
+    expect(commands).not.toContain('git push origin "HEAD:refs/heads/${TARGET_BRANCH}"')
+  })
+})
+
 describe('Python release workflows', () => {
   it('keeps complete wheel validation separate from protected public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')
