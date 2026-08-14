@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { WebBootEntry, WebBootGraph } from './client/manifest.ts'
 
 export type {
@@ -182,7 +182,7 @@ export function injectBootManifest(html: string, graph: WebBootGraph): string {
  * boot activation audit reports it).
  */
 export class ClientModuleRegistry extends Service {
-  static inject = ['webServer', 'loader']
+  static inject = ['loader']
 
   private readonly table = new Map<string, WebPluginRecord>()
   // Negative verdicts (unresolvable specifier — builtins like cordis:include,
@@ -195,10 +195,11 @@ export class ClientModuleRegistry extends Service {
   private readonly resolvePkgJson: (spec: string) => string
   private flushQueued = false
   private composed: WebBootGraph
+  private readonly webCarrier: ReturnType<Context['inject']>
 
   /**
    * Build the service: subscribe, seed, and run the activation flush.
-   * @param ctx - plugin context carrying webServer and loader.
+   * @param ctx - plugin context carrying the Loader; an optional Web server receives browser routes.
    */
   constructor(ctx: Context) {
     super(ctx, 'clientModules')
@@ -238,14 +239,33 @@ export class ClientModuleRegistry extends Service {
       throw new ClientPackageCompositionError(failures)
     }
 
-    ctx.effect(
-      () => ctx.webServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle }),
-      'client-modules: bundle route',
-    )
-    ctx.effect(
-      () => ctx.webServer.tapIndex(html => injectBootManifest(html, this.composed)),
-      'client-modules: boot manifest injection',
-    )
+    let active: { dispose: () => void; webServer: WebServer } | undefined
+    const mount = (webServer: WebServer): void => {
+      if (active?.webServer === webServer) return
+      active?.dispose()
+      const removeRoute = webServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle })
+      const removeTap = webServer.tapIndex(html => injectBootManifest(html, this.composed))
+      active = { webServer, dispose: () => { removeTap(); removeRoute() } }
+    }
+    const unmount = (webServer?: WebServer): void => {
+      if (active === undefined || (webServer !== undefined && active.webServer !== webServer)) return
+      active.dispose()
+      active = undefined
+    }
+    ctx.effect(() => {
+      const initial = ctx.get('webServer') as WebServer | undefined
+      if (initial !== undefined) mount(initial)
+      return () => unmount()
+    }, 'client-modules: initial Web carrier')
+    this.webCarrier = ctx.inject(['webServer'], (webCtx) => {
+      mount(webCtx.webServer)
+      return () => unmount(webCtx.webServer)
+    })
+  }
+
+  /** Settle any currently available optional Web-carrier registration. */
+  [Service.init](): Promise<void> {
+    return this.webCarrier.await().then(() => undefined)
   }
 
   /**

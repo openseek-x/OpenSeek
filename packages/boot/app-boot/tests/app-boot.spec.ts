@@ -614,7 +614,11 @@ describe('boot', () => {
       await configOwned.fiber.dispose()
     }
     const harnessBaseUrl = pathToFileURL(join(harness, 'entry.mjs')).href
-    const ctx = await boot(NAME, hostOwnedPath, undefined, undefined, harnessBaseUrl)
+    const ctx = await boot(NAME, hostOwnedPath, undefined, (hostCtx) => {
+      // Electron has no Node internal ESM loader; the installed-host anchor
+      // must retain the same bare-package winner through the public fallback.
+      hostCtx.loader.internal = undefined
+    }, harnessBaseUrl)
     try {
       expect(ctx.get('harnessPluginLoaded')).toBe(true)
       expect(ctx.get('shadowPluginLoaded')).toBeUndefined()

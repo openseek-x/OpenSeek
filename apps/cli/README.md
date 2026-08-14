@@ -45,3 +45,5 @@ The [CLI behavior reference](reference/README.md) owns exact layer precedence, f
 ## Development
 
 Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+
+The exported `@deepseek-ai/dsh/profile-boot` entry lets another application reuse profile composition without invoking the CLI parser. `runProfile` watches profile patches and owns `SIGINT`/`SIGTERM` by default; GUI embedders may set `watchConfig: false` when their loader cannot support config HMR and `handleSignals: false` when their native application lifecycle owns shutdown. The [desktop application](../desktop/README.md) is the shipped embedder.

@@ -125,6 +125,33 @@ describe('connection node half', () => {
     expect(upgrades).toHaveLength(0)
   })
 
+  it('registers its Web carriers when the Web server is provided after Connection', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    const upgrades: WebUpgradeRoute[] = []
+    ctx.provide('apiProxy', {} as unknown as ApiProxy)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+
+    const connection = ctx.get('connection') as HostConnectionHandle
+    const removeRpc = connection.rpc.handle('/rpc', async () => ({ ok: true, value: null }), {
+      authority: 'loopback',
+    })
+    expect(routes).toHaveLength(0)
+    expect(upgrades).toHaveLength(0)
+
+    const removeWebServer = ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
+    await Promise.resolve()
+    expect(routes.map(route => route.path)).toEqual([API_PATH, '/rpc'])
+    expect(upgrades.map(route => route.path)).toEqual([MUX_EVENTS_PATH, HOST_EVENTS_PATH])
+
+    await removeWebServer()
+    expect(routes).toHaveLength(0)
+    expect(upgrades).toHaveLength(0)
+    await removeRpc()
+    await fiber.dispose()
+  })
+
   it('requires WebSocket upgrade for network GETs to either event path', async () => {
     const { routes, dispose } = await mounted()
     for (const path of [MUX_EVENTS_PATH, HOST_EVENTS_PATH]) {
@@ -257,6 +284,42 @@ describe('connection node half', () => {
     expect(routes.map(candidate => candidate.path)).toEqual([API_PATH])
     await fiber.dispose()
     expect(routes).toHaveLength(0)
+  })
+
+  it('dispatches API and dedicated channels in process without a Web server', async () => {
+    const ctx = new Context()
+    const apiProxy = {
+      host: {
+        describe: ({ rpcId }: { rpcId: ReturnType<typeof RpcId> }) => Promise.resolve({
+          rpcId,
+          result: { ok: true as const, value: { version: 'test', cwd: '/tmp', attachedSessions: 0, canOpenPath: true } },
+        }),
+      },
+    } as unknown as ApiProxy
+    ctx.provide('apiProxy', apiProxy)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const connection = ctx.get('connection') as HostConnectionHandle
+    const request: ClientRequest = {
+      type: 'client-request', rpcId: RpcId('ipc-describe'), method: 'host.describe', payload: {},
+    }
+    const response = await connection.fetch(new Request('http://dsh.internal/api/host.describe', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request),
+    }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ rpcId: 'ipc-describe', result: { ok: true } })
+
+    const remove = connection.rpc.handle('/rpc', async endpoint => ({ ok: true, value: endpoint }), {
+      authority: 'loopback',
+    })
+    const generic = await connection.fetch(new Request('http://dsh.internal/rpc/read', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'ipc-rpc', method: 'read', payload: {} }),
+    }))
+    expect(await generic.json()).toMatchObject({ result: { ok: true, value: 'read' } })
+    await remove()
+    await fiber.dispose()
   })
 
   it('dispatches claimed /api endpoints before the API Proxy fallback and withdraws the claim', async () => {

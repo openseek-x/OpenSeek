@@ -34,6 +34,15 @@ pnpm run build
 pnpm dsh web
 ```
 
+在 macOS 上，同一份源码还提供 Electron 应用：
+
+```sh
+pnpm run desktop
+pnpm run package:desktop:mac
+```
+
+打包命令会生成 `dist-desktop/DeepSeek Harness-darwin-<arch>/DeepSeek Harness.app`。其传输机制、安全姿态、模型提供方支持与当前分发限制见[桌面应用参考](apps/desktop/README.md)。
+
 ## 社区与支持
 
 - 欢迎通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。

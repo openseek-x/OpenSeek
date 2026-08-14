@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { ClientModuleRegistry } from '../src/index.ts'
@@ -38,7 +38,7 @@ function writePackage(
 }
 
 /** Construct the node-half service and capture its plugin-bundle route. */
-function constructWithRoute(packageNames: string[]): { service: ClientModuleRegistry; route: WebRoute } {
+async function constructWithRoute(packageNames: string[]): Promise<{ service: ClientModuleRegistry; route: WebRoute }> {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
@@ -59,17 +59,81 @@ function constructWithRoute(packageNames: string[]): { service: ClientModuleRegi
   }
   ctx.provide('webServer', webServer as WebServer)
   const service = new ClientModuleRegistry(ctx)
+  await service[Service.init]()
   if (route === undefined) throw new Error('client bundle route was not registered')
   return { service, route }
 }
 
+/** Construct without a Web carrier, as the desktop composition does. */
+function constructWithoutRoute(packageNames: string[]): ClientModuleRegistry {
+  const ctx = new Context()
+  ctx.baseUrl = pathToFileURL(root!).href + '/'
+  ctx.provide('loader', {
+    *entries() {
+      for (const packageName of packageNames) {
+        yield { options: { name: packageName }, fiber: {}, disabled: false }
+      }
+    },
+  })
+  return new ClientModuleRegistry(ctx)
+}
+
 /** Construct the node-half service over the enabled fixture entries. */
-function construct(packageNames: string[]): ClientModuleRegistry {
-  return constructWithRoute(packageNames).service
+async function construct(packageNames: string[]): Promise<ClientModuleRegistry> {
+  return (await constructWithRoute(packageNames)).service
 }
 
 describe('client bundle activation', () => {
-  it('allows sibling dsh roles', () => {
+  it('composes a graph without registering Web routes for a desktop carrier', () => {
+    const packageName = '@fixture/desktop-client'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const service = constructWithoutRoute([packageName])
+    expect(service.graph().entries).toMatchObject([{ id: packageName }])
+    expect(service.clientPath(packageName)).toBe(clientPath)
+  })
+
+  it('registers browser routes when the Web server is provided after composition', async () => {
+    const packageName = '@fixture/late-web-client'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const ctx = new Context()
+    ctx.baseUrl = pathToFileURL(root!).href + '/'
+    ctx.provide('loader', {
+      *entries() {
+        yield { options: { name: packageName }, fiber: {}, disabled: false }
+      },
+    })
+    const service = new ClientModuleRegistry(ctx)
+    const routes: WebRoute[] = []
+    const transforms: Array<(html: string) => string> = []
+    const removeWebServer = ctx.provide('webServer', {
+      port: 0,
+      register(route: WebRoute) {
+        routes.push(route)
+        return () => { routes.splice(routes.indexOf(route), 1) }
+      },
+      registerUpgrade: () => () => {},
+      tapIndex(transform: (html: string) => string) {
+        transforms.push(transform)
+        return () => { transforms.splice(transforms.indexOf(transform), 1) }
+      },
+    } as unknown as WebServer)
+    await service[Service.init]()
+
+    expect(service.graph().entries).toMatchObject([{ id: packageName }])
+    expect(routes.map(route => route.path)).toEqual(['/plugins'])
+    expect(transforms).toHaveLength(1)
+    expect(transforms[0]!('<head></head>')).toContain('window.__DSH_BOOT__')
+
+    await removeWebServer()
+    expect(routes).toHaveLength(0)
+    expect(transforms).toHaveLength(0)
+  })
+
+  it('allows sibling dsh roles', async () => {
     const currentName = '@fixture/current-client-field'
     const clientPath = writePackage(currentName, {
       dsh: {
@@ -80,15 +144,15 @@ describe('client bundle activation', () => {
     })
     mkdirSync(dirname(clientPath), { recursive: true })
     writeFileSync(clientPath, 'module.exports = {}\n')
-    expect(construct([currentName]).graph().entries.map(entry => entry.id)).toEqual([currentName])
+    expect((await construct([currentName])).graph().entries.map(entry => entry.id)).toEqual([currentName])
   })
 
-  it('groups missing bundles under one source-build instruction with a package/path list', () => {
+  it('groups missing bundles under one source-build instruction with a package/path list', async () => {
     const firstName = '@fixture/missing-first'
     const secondName = '@fixture/missing-second'
     const firstPath = writePackage(firstName)
     const secondPath = writePackage(secondName)
-    expect(() => construct([firstName, secondName])).toThrow([
+    await expect(construct([firstName, secondName])).rejects.toThrow([
       'client-modules: 2 client packages failed to compose:',
       '  client bundles not found; run `pnpm run build` before launch:',
       `    - package: ${firstName}`,
@@ -98,13 +162,13 @@ describe('client bundle activation', () => {
     ].join('\n'))
   })
 
-  it('does not report other bundle read failures as missing builds', () => {
+  it('does not report other bundle read failures as missing builds', async () => {
     const packageName = '@fixture/unreadable-client'
     const clientPath = writePackage(packageName)
     mkdirSync(clientPath, { recursive: true })
     let thrown: unknown
     try {
-      construct([packageName])
+      await construct([packageName])
     } catch (error) {
       thrown = error
     }
@@ -121,7 +185,7 @@ describe('client bundle activation', () => {
     writeFileSync(clientPath, 'module.exports = {}\n')
     const map = '{"version":3,"sources":["src/client/index.tsx"]}\n'
     writeFileSync(`${clientPath}.map`, map)
-    const { route } = constructWithRoute([packageName])
+    const { route } = await constructWithRoute([packageName])
     let status = 0
     let headers: Record<string, string> | undefined
     let body = ''

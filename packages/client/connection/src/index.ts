@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
 // Activates the webServer Context merge used below.
-import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
 import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
@@ -16,6 +16,11 @@ export type {
   ConnectionRpcEndpointMatcher,
   ConnectionRpcHandler,
   ConnectionRpcHandlerOptions,
+  ConnectionFetch,
+  DesktopConnectionBridge,
+  DesktopRequest,
+  DesktopResponse,
+  DesktopStreamSink,
   HostConnectionHandle,
   HostConnectionRpc,
 } from './rpc.ts'
@@ -43,8 +48,8 @@ function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): voi
   }
 }
 
-/** Services required before providing Connection; API Proxy is an optional `/api` fallback. */
-export const inject = ['webServer']
+/** Services required before providing Connection; Web Server and API Proxy are optional carriers/fallbacks. */
+export const inject: string[] = []
 
 /** Plugin config: the deployment's non-loopback serving authorities. */
 export interface ConnectionConfig {
@@ -158,6 +163,12 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       return toFetchHandler(apiProxy).fetch(request)
     },
   })
+  connection.setApiFallback({ fetch: (request) => {
+    const apiProxy = ctx.get('apiProxy')
+    return apiProxy === undefined
+      ? Promise.resolve(new Response('not found', { status: 404 }))
+      : toFetchHandler(apiProxy).fetch(request)
+  } })
   const route: WebRoute = {
     kind: 'prefix',
     path: API_PATH,
@@ -170,15 +181,26 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       await bridge(req, res, fetchHandler, maxRequestBodyBytes)
     },
   }
-  ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
-  ctx.inject(['apiProxy'], (apiCtx) => {
-    assertImageBodyCapacity(apiCtx, maxRequestBodyBytes)
-    const downlinks = new WebSocketDownlinks(apiCtx.apiProxy)
+  observeWebServer(ctx, 'client-connection: /api route', webServer => webServer.register(route))
+
+  let activeDownlinks: {
+    apiProxy: unknown
+    dispose: () => void
+    webServer: WebServer
+  } | undefined
+  const mountDownlinks = (carrierCtx: Context): void => {
+    const webServer = carrierCtx.webServer
+    const apiProxy = carrierCtx.apiProxy
+    if (activeDownlinks?.webServer === webServer && activeDownlinks.apiProxy === apiProxy) return
+    activeDownlinks?.dispose()
+    assertImageBodyCapacity(carrierCtx, maxRequestBodyBytes)
+    const downlinks = new WebSocketDownlinks(apiProxy)
+    const disposers: Array<() => void> = [() => downlinks.close()]
     const registerDownlink = (
       path: string,
       handle: WebUpgradeRoute['handler'],
     ): void => {
-      apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
+      disposers.push(webServer.registerUpgrade({
         path,
         handler: (req, socket, head) => {
           if (!isTrustedApiRequest(req, trustedHosts)) {
@@ -187,10 +209,59 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
           }
           return handle(req, socket, head)
         },
-      }), `client-connection: ${path} WebSocket`)
+      }))
     }
-    apiCtx.effect(() => () => downlinks.close(), 'client-connection: WebSocket downlinks')
     registerDownlink(MUX_EVENTS_PATH, (req, socket, head) => { downlinks.handleMux(req, socket, head) })
     registerDownlink(HOST_EVENTS_PATH, (req, socket, head) => { downlinks.handleHost(req, socket, head) })
+    activeDownlinks = {
+      apiProxy,
+      webServer,
+      dispose: () => {
+        for (const dispose of disposers.reverse()) dispose()
+      },
+    }
+  }
+  const unmountDownlinks = (carrierCtx?: Context): void => {
+    if (activeDownlinks === undefined) return
+    if (carrierCtx !== undefined
+      && (activeDownlinks.webServer !== carrierCtx.webServer || activeDownlinks.apiProxy !== carrierCtx.apiProxy)) return
+    activeDownlinks.dispose()
+    activeDownlinks = undefined
+  }
+  ctx.effect(() => {
+    if (ctx.get('webServer') !== undefined && ctx.get('apiProxy') !== undefined) mountDownlinks(ctx)
+    return () => unmountDownlinks()
+  }, 'client-connection: initial WebSocket carriers')
+  ctx.inject(['webServer', 'apiProxy'], (carrierCtx) => {
+    mountDownlinks(carrierCtx)
+    return () => unmountDownlinks(carrierCtx)
+  })
+}
+
+/** Register one optional Web carrier now when present, and again across later provider lifecycles. */
+function observeWebServer(
+  ctx: Context,
+  label: string,
+  register: (webServer: WebServer) => () => void,
+): void {
+  let active: { dispose: () => void; webServer: WebServer } | undefined
+  const mount = (webServer: WebServer): void => {
+    if (active?.webServer === webServer) return
+    active?.dispose()
+    active = { webServer, dispose: register(webServer) }
+  }
+  const unmount = (webServer?: WebServer): void => {
+    if (active === undefined || (webServer !== undefined && active.webServer !== webServer)) return
+    active.dispose()
+    active = undefined
+  }
+  ctx.effect(() => {
+    const initial = ctx.get('webServer') as WebServer | undefined
+    if (initial !== undefined) mount(initial)
+    return () => unmount()
+  }, `${label} initial carrier`)
+  ctx.inject(['webServer'], (webCtx) => {
+    mount(webCtx.webServer)
+    return () => unmount(webCtx.webServer)
   })
 }

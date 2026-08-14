@@ -56,6 +56,8 @@ export interface HostConnectionRpc {
 export interface HostConnectionHandle {
   /** Generic RPC channel registry. */
   readonly rpc: HostConnectionRpc
+  /** Dispatch one Fetch-shaped request through registered channels and the API fallback. */
+  fetch(request: Request): Promise<Response>
 }
 
 /** Client caller for logical RPC channels carried by the current transport. */
@@ -74,4 +76,54 @@ export interface ClientConnectionRpc {
     payload: unknown,
     signal?: AbortSignal,
   ): Promise<RpcResult<unknown>>
+}
+
+/** Fetch-shaped request carrier shared by API methods and generic RPC channels. */
+export interface ConnectionFetch {
+  /**
+   * Dispatch one request through the active physical carrier.
+   * @param input - absolute URL naming the logical channel and endpoint.
+   * @param init - standard Fetch request options.
+   * @returns a standard Fetch response after the carrier round trip.
+   */
+  (input: URL, init?: RequestInit): Promise<Response>
+}
+
+/** Desktop bridge injected by the Electron preload in a context-isolated renderer. */
+export interface DesktopConnectionBridge {
+  /** Dispatch one unary request as structured-clone-only metadata and bytes. */
+  request(request: DesktopRequest): Promise<DesktopResponse>
+  /** Abort one pending unary request. */
+  cancelRequest(id: string): void
+  /** Open one streaming response and receive its lifecycle through callbacks. */
+  openStream(request: DesktopRequest, sink: DesktopStreamSink): void
+  /** Abort one pending or open streaming request. */
+  cancelStream(id: string): void
+  /** Save a Host download through the desktop shell's native save dialog. */
+  saveDownload(path: string, filename: string): Promise<void>
+}
+
+/** Structured-clone request exchanged with the Electron preload. */
+export interface DesktopRequest {
+  readonly id: string
+  readonly url: string
+  readonly method: string
+  readonly headers: [string, string][]
+  readonly body?: Uint8Array
+}
+
+/** Complete unary response exchanged with the Electron preload. */
+export interface DesktopResponse {
+  readonly status: number
+  readonly statusText: string
+  readonly headers: [string, string][]
+  readonly body: Uint8Array
+}
+
+/** Renderer-owned callbacks used to rebuild a standard streaming Response. */
+export interface DesktopStreamSink {
+  opened(response: Omit<DesktopResponse, 'body'>): void
+  data(chunk: Uint8Array): void
+  end(): void
+  error(message: string): void
 }

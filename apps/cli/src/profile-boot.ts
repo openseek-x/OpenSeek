@@ -13,7 +13,7 @@
 
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -180,6 +180,18 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /**
+   * Keep the writable profile and home patch layers live. Defaults to true;
+   * embedders without Node's internal ESM loader (notably Electron) can opt
+   * out while retaining the same one-shot composition at startup.
+   */
+  watchConfig?: boolean
+  /**
+   * Let the shared profile runner own SIGINT/SIGTERM and process exit.
+   * Defaults to true; GUI embedders keep their native lifecycle owner while
+   * retaining the shared fail-loud rejection handler.
+   */
+  handleSignals?: boolean
 }
 
 /**
@@ -218,8 +230,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
   // surface — the launcher does not know whether the app considered its work
   // complete; SIGINT is a user interrupt and reports 130.
-  process.on('SIGTERM', () => { interrupt(0) })
-  process.on('SIGINT', () => { interrupt(130) })
+  if (options.handleSignals !== false) {
+    process.on('SIGTERM', () => { interrupt(0) })
+    process.on('SIGINT', () => { interrupt(130) })
+  }
   installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })
@@ -256,7 +270,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, pathToFileURL(INSTALL_ANCHOR).href)
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
@@ -265,7 +279,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // landed mid-setup. Watching is unconditional: a one-shot surface exits
   // through its bounded shutdown, which disposes the watchers before the
   // loop drains.
-  if (!signalShutdown.signal.aborted
+  if (options.watchConfig !== false
+    && !signalShutdown.signal.aborted
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {
     try {

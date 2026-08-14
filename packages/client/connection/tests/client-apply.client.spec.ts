@@ -7,11 +7,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, type ConnectionHandle } from '../src/client/index.ts'
 import type { RpcMessage } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
+import { DesktopApiClient } from '../src/client/desktop-api-client.ts'
 import { FixtureApiClient } from '../src/client/fixture.ts'
 import { WebApiClient } from '../src/client/web-api-client.ts'
+import type { DesktopConnectionBridge } from '../src/rpc.ts'
 
 type Win = { location?: { hostname: string; search: string; origin?: string } }
 type WebSocketGlobal = { WebSocket?: typeof WebSocket }
+type DesktopGlobal = { dshDesktop?: DesktopConnectionBridge }
 
 const originalWebSocket = globalThis.WebSocket
 const sockets: FakeWebSocket[] = []
@@ -49,6 +52,7 @@ class FakeWebSocket extends EventTarget {
 
 afterEach(() => {
   delete (globalThis as Win).location
+  delete (globalThis as DesktopGlobal).dshDesktop
   sockets.length = 0
   if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
   else globalThis.WebSocket = originalWebSocket
@@ -68,6 +72,28 @@ describe('connection client apply', () => {
     const handle = await mount()
     expect(handle.api).toBeInstanceOf(WebApiClient)
     expect(handle.isLoopback).toBe(true)
+  })
+
+  it('selects the desktop IPC carrier and treats its private origin as local', async () => {
+    ;(globalThis as Win).location = { hostname: 'app', search: '', origin: 'dsh://app' }
+    const request = vi.fn(() => Promise.resolve({
+      status: 200,
+      statusText: 'OK',
+      headers: [['content-type', 'application/json']] as [string, string][],
+      body: new TextEncoder().encode('{}'),
+    }))
+    ;(globalThis as DesktopGlobal).dshDesktop = {
+      request,
+      cancelRequest: vi.fn(),
+      openStream: vi.fn(),
+      cancelStream: vi.fn(),
+      saveDownload: () => Promise.resolve(),
+    }
+    const handle = await mount()
+    expect(handle.api).toBeInstanceOf(DesktopApiClient)
+    expect(handle.isLoopback).toBe(true)
+    await handle.api.host.describe({}).catch(() => undefined)
+    expect(request).toHaveBeenCalledOnce()
   })
 
   it('selects the fixture client under ?fixture (and with no location at all stays real)', async () => {

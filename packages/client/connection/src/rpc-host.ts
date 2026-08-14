@@ -1,7 +1,7 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import {
   clientRequestSchema,
   RpcId,
@@ -42,6 +42,8 @@ declare module '@deepseek-ai/cordis' {
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly channels = new Map<string, FetchHandler>()
+  private fallback: FetchHandler = { fetch: () => Promise.resolve(new Response('not found', { status: 404 })) }
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -50,6 +52,24 @@ export class HostConnectionService extends Service implements HostConnectionHand
    */
   constructor(ctx: Context, private readonly trustedHosts: readonly string[]) {
     super(ctx, 'connection')
+  }
+
+  /**
+   * Install the shared `/api` fallback after the API Proxy bridge has been composed.
+   * @param handler - fetch carrier used for unclaimed API endpoints.
+   */
+  setApiFallback(handler: FetchHandler): void {
+    this.fallback = handler
+  }
+
+  /** Dispatch a trusted in-process request without applying browser-origin authority checks. */
+  fetch(request: Request): Promise<Response> {
+    const pathname = new URL(request.url).pathname
+    const channel = longestChannel(pathname, [API_PATH, ...this.channels.keys()])
+    if (channel === undefined) return Promise.resolve(new Response('not found', { status: 404 }))
+    if (channel === API_PATH) return this.createSharedFetchHandler(API_PATH, this.fallback).fetch(request)
+    return this.channels.get(channel)?.fetch(request)
+      ?? Promise.resolve(new Response('not found', { status: 404 }))
   }
 
   /** Generic channel registry scoped to the Context reading this service. */
@@ -108,10 +128,32 @@ export class HostConnectionService extends Service implements HostConnectionHand
         await bridge(req, res, fetchHandler)
       },
     }
-    return owner.effect(
-      () => owner.webServer.register(route),
-      `client-connection: ${channel} rpc channel`,
-    )
+    return owner.effect(() => {
+      if (this.channels.has(channel)) throw new Error(`connection: duplicate route for rpc channel ${JSON.stringify(channel)}`)
+      this.channels.set(channel, fetchHandler)
+      let active: { dispose: () => void; webServer: WebServer } | undefined
+      const mount = (webServer: WebServer): void => {
+        if (active?.webServer === webServer) return
+        active?.dispose()
+        active = { webServer, dispose: webServer.register(route) }
+      }
+      const unmount = (webServer?: WebServer): void => {
+        if (active === undefined || (webServer !== undefined && active.webServer !== webServer)) return
+        active.dispose()
+        active = undefined
+      }
+      const initial = owner.get('webServer') as WebServer | undefined
+      if (initial !== undefined) mount(initial)
+      const carrier = owner.inject(['webServer'], (webCtx) => {
+        mount(webCtx.webServer)
+        return () => unmount(webCtx.webServer)
+      })
+      return async () => {
+        unmount()
+        this.channels.delete(channel)
+        await carrier.dispose()
+      }
+    }, `client-connection: ${channel} rpc channel`)
   }
 
   private registerInterceptor(
@@ -139,6 +181,15 @@ export class HostConnectionService extends Service implements HostConnectionHand
       }
     }, `client-connection: ${channel} rpc interceptor`)
   }
+}
+
+function longestChannel(pathname: string, channels: Iterable<string>): string | undefined {
+  let selected: string | undefined
+  for (const channel of channels) {
+    if (pathname !== channel && !pathname.startsWith(`${channel}/`)) continue
+    if (selected === undefined || channel.length > selected.length) selected = channel
+  }
+  return selected
 }
 
 function rpcFetchHandler(

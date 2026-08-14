@@ -10,6 +10,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../interaction/commands" },
+    { "path": "../../client/connection/tsconfig.client.json" },
     { "path": "../../client/locale" },
     { "path": "../../client/runtime" },
     { "path": "../../client/ui-commands" },

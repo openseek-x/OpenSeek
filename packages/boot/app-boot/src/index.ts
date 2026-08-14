@@ -8,6 +8,7 @@
 
 import { pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
@@ -495,10 +496,13 @@ export async function mountRootInclude(
       override import(name: string, getOuterStack?: () => string[]): unknown {
         const specifier = isAbsolute(name) ? pathToFileURL(name).href : name
         if (name.startsWith('.') || name.startsWith('cordis:')) return super.import(specifier, getOuterStack)
+        if (isAbsolute(name)) return import(/* @vite-ignore */specifier)
         const internal = this.ctx.loader.internal
-        /* v8 ignore next -- Node supplies the internal loader; this preserves the
-           original diagnostic for hypothetical embedders without it. */
-        if (internal === undefined) return super.import(specifier, getOuterStack)
+        if (internal === undefined) {
+          // Electron does not expose Node's internal ESM loader. Resolve from
+          // the same installed-host anchor and import the resulting file URL.
+          return import(/* @vite-ignore */pathToFileURL(createRequire(bareModuleBaseUrl).resolve(specifier)).href)
+        }
         return internal.import(specifier, bareModuleBaseUrl, {})
       }
     }

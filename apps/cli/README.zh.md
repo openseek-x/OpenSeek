@@ -45,3 +45,5 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 ## 开发
 
 生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.md#source-execution)为准。
+
+导出的 `@deepseek-ai/dsh/profile-boot` 入口允许其他应用复用 profile 组合，而不调用 CLI 解析器。`runProfile` 默认监视 profile patch，并接管 `SIGINT`／`SIGTERM`；当 GUI 嵌入方的 loader 无法支持配置 HMR 时可设置 `watchConfig: false`，当原生应用生命周期负责关闭时可设置 `handleSignals: false`。随附的嵌入方是[桌面应用](../desktop/README.md)。

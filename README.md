@@ -34,6 +34,15 @@ pnpm run build
 pnpm dsh web
 ```
 
+On macOS, the same checkout also provides an Electron application:
+
+```sh
+pnpm run desktop
+pnpm run package:desktop:mac
+```
+
+The package command writes `dist-desktop/DeepSeek Harness-darwin-<arch>/DeepSeek Harness.app`. See the [desktop application reference](apps/desktop/README.md) for its transport, security posture, model-provider support, and current distribution limitations.
+
 ## Community and support
 
 - Feel free to submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
