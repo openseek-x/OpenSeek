@@ -112,12 +112,17 @@ try {
     // The portable deploy rewrites the reviewed workspace postinstall's file:
     // key; run that one script explicitly below instead of broadening allowBuilds.
     '--config.strict-dep-builds=false',
+    // NSIS dereferences links while creating its embedded archive. A hoisted
+    // Windows deployment avoids expanding pnpm's linked dependency graph.
+    ...(targetPlatform === 'win32' ? ['--config.node-linker=hoisted'] : []),
     stageDirectory,
   ])
 
   const spawnHelperRepair = join(
     stageDirectory,
-    'node_modules/.pnpm/node_modules/@deepseek-ai/dsh-subprocess-local/scripts/ensure-spawn-helper.mjs',
+    targetPlatform === 'win32'
+      ? 'node_modules/@deepseek-ai/dsh-subprocess-local/scripts/ensure-spawn-helper.mjs'
+      : 'node_modules/.pnpm/node_modules/@deepseek-ai/dsh-subprocess-local/scripts/ensure-spawn-helper.mjs',
   )
   if (!existsSync(spawnHelperRepair)) {
     throw new Error(`package-desktop: missing deployed PTY helper repair: ${spawnHelperRepair}`)

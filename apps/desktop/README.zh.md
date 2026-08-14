@@ -50,6 +50,6 @@ Renderer 以 `sandbox: true`、context isolation、禁用 Node integration、拒
 
 - **本地打包仅面向本机**：一次调用只构建当前操作系统与架构。CI 会提供两个 Mac 架构以及 Windows x64 和 Linux x64，但不会生成 macOS universal 应用。
 - **分发不使用发布证书**：macOS 应用只有 ad-hoc 签名且未 notarize；Windows 安装程序没有 Authenticode 签名。产物已包含品牌图标，但在增加已签名发布通道前，接收者仍可能看到 Gatekeeper 或 SmartScreen 警告。
-- **生产 workspace 保持非打包目录**：pnpm 的相对 workspace 链接会跨越虚拟存储中的包目录，因此禁用 ASAR。生成的应用会明显大于完成 bundle 优化的发布工件。
+- **生产 workspace 保持非打包目录**：macOS 与 Linux 会保留跨越虚拟存储包目录的 pnpm 相对 workspace 链接；Windows 使用 hoisted 部署，避免 NSIS 在归档时展开链接依赖图。ASAR 仍处于禁用状态，因此生成的应用会明显大于完成 bundle 优化的发布产物。
 - **Profile patch HMR 被禁用**：修改 profile 或 home 的 `cordis.patch.yml` 后需要重启应用；通过产品界面编辑的设置仍实时生效。
 - **Unary IPC 响应会缓冲**：请求 body 延用 Connection 载体的 160 MiB 上限，非流式响应会在返回 renderer 前完整物化。只有两条长生命周期事件通道与原生 Session 日志保存使用流式传输。

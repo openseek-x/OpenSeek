@@ -21,6 +21,7 @@ dmg:
 win:
   target: nsis
   icon: assets/icon.ico
+  signExecutable: false
 
 nsis:
   oneClick: false
