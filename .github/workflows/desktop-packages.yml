@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   PRIMARY_NODE_VERSION: '24'
@@ -19,34 +19,50 @@ env:
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
+  release-context:
+    name: Classify release build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.classify.outputs.release }}
+    steps:
+      - name: Classify trusted tag push
+        id: classify
+        env:
+          RELEASE_BUILD: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'true' || 'false' }}
+        run: echo "release=$RELEASE_BUILD" >> "$GITHUB_OUTPUT"
+
   package:
     name: ${{ matrix.name }}
+    needs: release-context
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # desktop-package is intentionally secret-free; only trusted tag Mac and Windows jobs select desktop-release.
+    environment: ${{ needs.release-context.outputs.release == 'true' && matrix.release_environment || 'desktop-package' }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: macOS arm64 DMG
+          - name: macOS arm64 DMG and ZIP
             runner: macos-15
             platform: macos-arm64
             arch: arm64
-            artifact: dist-desktop/installers/*.dmg
-          - name: macOS x64 DMG
+            release_environment: desktop-release
+          - name: macOS x64 DMG and ZIP
             runner: macos-15-intel
             platform: macos-x64
             arch: x64
-            artifact: dist-desktop/installers/*.dmg
+            release_environment: desktop-release
           - name: Windows x64 EXE
             runner: windows-2025
             platform: windows-x64
             arch: x64
-            artifact: dist-desktop/installers/*.exe
+            release_environment: desktop-release
           - name: Linux x64 tar.gz
             runner: ubuntu-24.04
             platform: linux-x64
             arch: x64
-            artifact: dist-desktop/installers/*.tar.gz
+            release_environment: desktop-package
     steps:
       - uses: actions/checkout@v6
         with:
@@ -71,10 +87,14 @@ jobs:
         run: node -e "if (process.arch !== '${{ matrix.arch }}') throw new Error('expected ${{ matrix.arch }}, got ' + process.arch)"
 
       - name: Verify release tag
-        if: github.ref_type == 'tag'
+        if: needs.release-context.outputs.release == 'true'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: node -e "const { version } = require('./apps/desktop/package.json'); const expected = 'dsh-v' + version; if (process.env.RELEASE_TAG !== expected) throw new Error('expected tag ' + expected + ', got ' + process.env.RELEASE_TAG)"
+        run: >-
+          node -e "const { version } = require('./apps/desktop/package.json');
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('desktop releases require a stable X.Y.Z version, got ' + version);
+          const expected = 'dsh-v' + version;
+          if (process.env.RELEASE_TAG !== expected) throw new Error('expected tag ' + expected + ', got ' + process.env.RELEASE_TAG)"
 
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
@@ -85,8 +105,87 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -yq xvfb
 
+      - name: Configure macOS release signing
+        if: runner.os == 'macOS' && needs.release-context.outputs.release == 'true'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          : "${MACOS_CERTIFICATE_BASE64:?MACOS_CERTIFICATE_BASE64 is required}"
+          : "${MACOS_CERTIFICATE_PASSWORD:?MACOS_CERTIFICATE_PASSWORD is required}"
+          : "${MACOS_SIGN_IDENTITY:?MACOS_SIGN_IDENTITY is required}"
+          : "${APPLE_ID:?APPLE_ID is required}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD is required}"
+          : "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required}"
+          certificate_path="$RUNNER_TEMP/dsh-code-signing.p12"
+          keychain_path="$RUNNER_TEMP/dsh-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          node -e "require('node:fs').writeFileSync(process.argv[1], Buffer.from(process.env.MACOS_CERTIFICATE_BASE64, 'base64'))" "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path" | grep -F -- "$MACOS_SIGN_IDENTITY"
+
+      - name: Configure Windows release signing
+        if: runner.os == 'Windows' && needs.release-context.outputs.release == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64)) {
+            throw 'WINDOWS_CERTIFICATE_BASE64 is required'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            throw 'WINDOWS_CERTIFICATE_PASSWORD is required'
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'dsh-code-signing.pfx'
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64)
+          )
+          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $certificatePath,
+            $env:WINDOWS_CERTIFICATE_PASSWORD,
+            [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+          )
+          try {
+            if ([string]::IsNullOrWhiteSpace($certificate.Subject)) {
+              throw 'Windows signing certificate subject is empty'
+            }
+            "DESKTOP_WINDOWS_PUBLISHER_NAME=$($certificate.Subject)" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } finally {
+            $certificate.Dispose()
+          }
+
       - name: Build package
         run: pnpm run package:desktop
+        env:
+          DESKTOP_RELEASE_BUILD: ${{ needs.release-context.outputs.release }}
+          DESKTOP_UPDATES_ENABLED: ${{ needs.release-context.outputs.release == 'true' && runner.os != 'Linux' && 'true' || 'false' }}
+          DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          DESKTOP_MAC_SIGN_IDENTITY: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.MACOS_SIGN_IDENTITY || '' }}
+          APPLE_ID: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          WINDOWS_CERTIFICATE_FILE: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && format('{0}/dsh-code-signing.pfx', runner.temp) || '' }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          CSC_LINK: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && format('{0}/dsh-code-signing.pfx', runner.temp) || '' }}
+          CSC_KEY_PASSWORD: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+
+      - name: Verify updater metadata
+        if: runner.os != 'Linux'
+        run: pnpm exec tsx scripts/verify-desktop-update-metadata.ts dist-desktop/installers ${{ matrix.platform }}
 
       - name: Configure Linux Chromium sandbox helper
         if: runner.os == 'Linux'
@@ -102,19 +201,59 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm run test:desktop:packaged
 
+      - name: Verify macOS release signature and notarization
+        if: runner.os == 'macOS' && needs.release-context.outputs.release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          application="dist-desktop/DeepSeek Harness-darwin-${{ matrix.arch }}/DeepSeek Harness.app"
+          codesign --verify --deep --strict --verbose=2 "$application"
+          xcrun stapler validate "$application"
+          spctl --assess --type execute --verbose=2 "$application"
+
+      - name: Verify Windows release signatures
+        if: runner.os == 'Windows' && needs.release-context.outputs.release == 'true'
+        shell: pwsh
+        run: |
+          $application = 'dist-desktop/DeepSeek Harness-win32-${{ matrix.arch }}/DeepSeek Harness.exe'
+          $installer = Get-ChildItem 'dist-desktop/installers' -Filter '*.exe' -File
+          if ($installer.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($installer.Count)"
+          }
+          foreach ($path in @($application, $installer[0].FullName)) {
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature for ${path}: $($signature.Status)"
+            }
+          }
+
+      - name: Remove temporary macOS signing credentials
+        if: always() && needs.release-context.outputs.release == 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/dsh-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/dsh-code-signing.p12"
+
+      - name: Remove temporary Windows signing credentials
+        if: always() && needs.release-context.outputs.release == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item "$env:RUNNER_TEMP/dsh-code-signing.pfx" -Force -ErrorAction SilentlyContinue
+
       - uses: actions/upload-artifact@v7
         with:
           name: DeepSeek-Harness-${{ matrix.platform }}
-          path: ${{ matrix.artifact }}
+          path: dist-desktop/installers/*
           if-no-files-found: error
           retention-days: 14
 
   publish:
     name: Publish GitHub Release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: package
+    if: needs.release-context.outputs.release == 'true'
+    needs: [release-context, package]
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    environment: desktop-release
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -129,10 +268,33 @@ jobs:
         run: |
           set -euo pipefail
           [ "$(find . -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 2 ]
+          [ "$(find . -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 2 ]
           [ "$(find . -maxdepth 1 -type f -name '*.exe' | wc -l)" -eq 1 ]
+          [ "$(find . -maxdepth 1 -type f -name '*.exe.blockmap' | wc -l)" -eq 1 ]
+          [ "$(find . -maxdepth 1 -type f -name '*.blockmap' | wc -l)" -eq 3 ]
           [ "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1 ]
-          [ "$(find . -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 0 ]
-          sha256sum *.dmg *.exe *.tar.gz | sort -k2 > SHA256SUMS
+          [ "$(find . -maxdepth 1 -type f -name '*.yml' | wc -l)" -eq 3 ]
+          [ -f latest-arm64-mac.yml ]
+          [ -f latest-x64-mac.yml ]
+          [ -f latest.yml ]
+          [ ! -e latest-linux.yml ]
+          [ "$(find . -maxdepth 1 -type f -name '*-mac-arm64.zip' | wc -l)" -eq 1 ]
+          [ "$(find . -maxdepth 1 -type f -name '*-mac-x64.zip' | wc -l)" -eq 1 ]
+          [ "$(find . -maxdepth 1 -type f -name '*-win-x64.exe' | wc -l)" -eq 1 ]
+          arm64_zip="$(find . -maxdepth 1 -type f -name '*-mac-arm64.zip' -printf '%f\n')"
+          x64_zip="$(find . -maxdepth 1 -type f -name '*-mac-x64.zip' -printf '%f\n')"
+          windows_installer="$(find . -maxdepth 1 -type f -name '*-win-x64.exe' -printf '%f\n')"
+          [ -f "$arm64_zip.blockmap" ]
+          [ -f "$x64_zip.blockmap" ]
+          [ -f "$windows_installer.blockmap" ]
+          grep -F -- "$arm64_zip" latest-arm64-mac.yml
+          grep -F -- "$x64_zip" latest-x64-mac.yml
+          grep -F -- "$windows_installer" latest.yml
+          version="${GITHUB_REF_NAME#dsh-v}"
+          grep -F -- "version: $version" latest-arm64-mac.yml
+          grep -F -- "version: $version" latest-x64-mac.yml
+          grep -F -- "version: $version" latest.yml
+          sha256sum *.dmg *.zip *.exe *.blockmap *.yml *.tar.gz | sort -k2 > SHA256SUMS
 
       - name: Publish GitHub Release
         env:
@@ -142,19 +304,34 @@ jobs:
           set -euo pipefail
           release_state="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
           if [ "$release_state" = false ]; then
-            echo "GitHub Release $RELEASE_TAG already exists."
-            exit 0
+            echo "::error::Public GitHub Release $RELEASE_TAG already exists; published assets are immutable and were not verified by this run."
+            exit 1
           fi
           if [ "$release_state" = true ]; then
             echo "::error::Draft GitHub Release $RELEASE_TAG already exists; remove or publish it before retrying."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" \
-            dist-desktop/release/*.dmg \
-            dist-desktop/release/*.exe \
-            dist-desktop/release/*.tar.gz \
-            dist-desktop/release/SHA256SUMS \
+          shopt -s nullglob
+          release_assets=(
+            dist-desktop/release/*.dmg
+            dist-desktop/release/*.zip
+            dist-desktop/release/*.exe
+            dist-desktop/release/*.blockmap
+            dist-desktop/release/latest.yml
+            dist-desktop/release/latest-arm64-mac.yml
+            dist-desktop/release/latest-x64-mac.yml
+            dist-desktop/release/*.tar.gz
+            dist-desktop/release/SHA256SUMS
+          )
+          gh release create "$RELEASE_TAG" "${release_assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --generate-notes \
-            --title "DeepSeek Harness ${RELEASE_TAG#dsh-v}"
+            --title "DeepSeek Harness ${RELEASE_TAG#dsh-v}" \
+            --draft
+          [ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]
+          diff \
+            <(printf '%s\n' "${release_assets[@]##*/}" | sort) \
+            <(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          [ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ]

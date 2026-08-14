@@ -6,6 +6,9 @@ export const IPC_STREAM_OPEN = 'dsh:stream-open'
 export const IPC_STREAM_CANCEL = 'dsh:stream-cancel'
 export const IPC_STREAM_EVENT = 'dsh:stream-event'
 export const IPC_SAVE_DOWNLOAD = 'dsh:save-download'
+export const IPC_UPDATE_GET_STATE = 'dsh:update:get-state'
+export const IPC_UPDATE_ACTION = 'dsh:update:action'
+export const IPC_UPDATE_STATE = 'dsh:update:state'
 
 /** Upper bound shared with the default Connection HTTP carrier. */
 export const MAX_REQUEST_BODY_BYTES = 160 * 1024 * 1024
@@ -40,8 +43,3 @@ export type IpcStreamEvent =
   | { readonly id: string; readonly kind: 'data'; readonly chunk: Uint8Array }
   | { readonly id: string; readonly kind: 'end' }
   | { readonly id: string; readonly kind: 'error'; readonly message: string }
-
-/** Only the two long-lived Connection event channels use streamed IPC. */
-export function isStreamPath(url: URL): boolean {
-  return url.pathname === '/api/events.mux' || url.pathname === '/api/events.host'
-}

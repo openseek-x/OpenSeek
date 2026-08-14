@@ -30,3 +30,6 @@
 
     - id: ui-directory-picker-desktop
       name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
+
+    - id: ui-desktop-update
+      name: '@deepseek-ai/dsh-client-ui-desktop-update'

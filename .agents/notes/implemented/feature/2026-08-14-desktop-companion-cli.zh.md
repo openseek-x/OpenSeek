@@ -14,7 +14,7 @@ Status: implemented
 
 每次 profile 启动都会以该 profile 的 manifest（元数据清单）为裸包解析锚点。因此，无论是 Node 还是 Electron，都会先查找该 profile 的树外依赖，再查找 `$DSH_HOME/profiles/node_modules` 中修复后的安装依赖闭包，不受 workspace 提升方式或桌面包布局影响。
 
-桌面打包器会在应用可执行文件旁写入一个轻量的公开启动器：macOS 应用内为 `Contents/MacOS/dsh`，Windows 安装目录内为 `dsh.cmd`，Linux 压缩包根目录内为 `dsh`。它还会在应用资源中写入私有的 `node` 与 `pnpm` shim，并且只把该目录加入 companion 进程树的 `PATH`，使包生命周期脚本能够解析内嵌运行时和锁定版本的包管理器。每个启动器都通过相对路径寻址已部署文件，POSIX 启动器还会追踪自身的符号链接目标，因此移动应用或为其创建链接后，启动器、CLI、内置组合包和包管理器之间的对应关系仍然成立。Companion 与图形应用使用相同的 `$DSH_HOME` 和 profile。
+桌面打包器会在应用可执行文件旁写入一个轻量的公开启动器：macOS 应用内为 `Contents/MacOS/dsh`，Windows 安装目录内为 `dsh.cmd`，Linux 压缩包根目录内为 `dsh`。它还会在应用资源中写入私有的 `node` 与 `pnpm` shim，并且只把该目录加入 companion 进程树的 `PATH`，使包生命周期脚本能够解析内嵌运行时和锁定版本的包管理器。每个启动器都通过相对路径寻址已部署文件，POSIX 启动器还会追踪自身的符号链接目标，因此移动应用或为其创建链接后，启动器、CLI、内置组合包和包管理器之间的对应关系仍然成立。Companion 与图形应用使用相同的 `$DSH_HOME` 和 profile。启动器与 shim 会在原生应用签名前注入，因此它们始终位于签名覆盖的应用载荷内。
 
 桌面容器不会把目录加入 `PATH`，也不会编辑 shell 启动文件。DMG 拖放安装和 Linux 压缩包解压不存在可信的跨平台安装事务来承载这项修改，静默更改用户的 shell 配置也超出了应用安装权限。用户可以直接调用安装后的路径，或自行在已加入 `PATH` 的目录中创建链接。
 

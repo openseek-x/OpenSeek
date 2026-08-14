@@ -16,6 +16,7 @@
     "src/client/random-uuid.ts",
     "src/client/rpc.ts",
     "src/client/web-api-client.ts",
+    "src/desktop-update.ts",
     "src/loopback-hostname.ts",
     "src/rpc.ts"
   ],

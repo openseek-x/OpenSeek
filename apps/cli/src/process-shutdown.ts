@@ -3,12 +3,59 @@
 /** Maximum grace allowed for the application tree to dispose before process exit. */
 export const PROCESS_SHUTDOWN_TIMEOUT_MS = 5_000
 
+/** Awaitable graceful shutdown shared by process-owned and caller-owned lifecycles. */
+export interface ApplicationShutdown {
+  /** Start or join graceful disposal. */
+  shutdown(code: number): Promise<void>
+}
+
 /** Process-exit controller shared by normal completion and Unix signal handlers. */
-export interface ProcessShutdown {
+export interface ProcessShutdown extends ApplicationShutdown {
   /** Start or join graceful disposal before allowing natural completion with `code`. */
   shutdown(code: number): Promise<void>
   /** Start graceful disposal followed by exit, or force exit when shutdown is already running. */
   interrupt(code: number): void
+}
+
+/**
+ * Create bounded shutdown for an embedder that owns final process termination.
+ * @param dispose - Whole-application teardown that resolves at quiescence.
+ * @param timeoutMs - Grace before rejecting so the caller can choose how to terminate.
+ * @returns A coalescing controller that never writes process exit state.
+ */
+export function createCallerOwnedShutdown(
+  dispose: () => Promise<void>,
+  timeoutMs = PROCESS_SHUTDOWN_TIMEOUT_MS,
+): ApplicationShutdown {
+  let pending: Promise<void> | undefined
+
+  return {
+    shutdown(_code) {
+      pending ??= new Promise<void>((resolve, reject) => {
+        let settled = false
+        const timeout = setTimeout(() => {
+          if (settled) return
+          settled = true
+          reject(new Error(`application shutdown exceeded ${String(timeoutMs)}ms`))
+        }, timeoutMs)
+        Promise.resolve().then(dispose).then(
+          () => {
+            if (settled) return
+            settled = true
+            clearTimeout(timeout)
+            resolve()
+          },
+          (error: unknown) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timeout)
+            reject(error instanceof Error ? error : new Error(String(error)))
+          },
+        )
+      })
+      return pending
+    },
+  }
 }
 
 /**
