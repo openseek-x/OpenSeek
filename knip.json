@@ -737,7 +737,8 @@
         "tests/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@deepseek-ai/.+"
+        "@deepseek-ai/.+",
+        "pnpm"
       ]
     },
     "packages/client/modules": {

@@ -26,6 +26,18 @@ pnpm run test:desktop:packaged
 
 从终端启动时，终端当前目录是初始 workspace。从 Finder 启动且继承的工作目录为 `/` 时，应用从用户的 Documents 目录开始；在应用内选择其他 workspace 后，会按常规方式切换活动 workspace。
 
+## 配套 CLI
+
+每个打包后的应用都包含版本匹配的 `dsh` companion：macOS 位于 `DeepSeek Harness.app/Contents/MacOS/dsh`，Windows 位于已安装应用旁的 `dsh.cmd`，Linux 位于压缩包中 `deepseek-harness` 旁的 `dsh`。该 companion 使用 Electron 内嵌的 Node 运行时启动随附 CLI，`dsh plugin` 则通过同一个可执行文件运行 CLI 锁定版本的 pnpm。私有的 `node` 与 `pnpm` shim 只对 companion 的进程树可见，其中也包括包生命周期脚本。因此，只安装桌面应用也能管理 profile 组合包，无需系统提供 Node.js 或 pnpm。
+
+分发物不会修改用户的 `PATH`。请通过安装后的路径调用 companion，或在已加入 `PATH` 的目录中创建 shell 链接；macOS 默认安装位置的调用形式如下：
+
+```sh
+"/Applications/DeepSeek Harness.app/Contents/MacOS/dsh" plugin --profile web add package-name
+```
+
+Companion 与桌面应用共用 `$DSH_HOME` 和 `web` profile。添加、更新或移除组合包前先退出应用，操作完成后重新打开，使新的 profile 组合生效。包生命周期脚本以用户的宿主权限运行，且位于 agent 沙箱之外；只安装可信包，具体说明见[插件打包指南](../../docs/user/develop/basic/publish.md#installing-from-github-the-build-script-catch)。分发决策及未采用的自动修改 `PATH` 方案记录在 [companion CLI Agent Note](../../.agents/notes/implemented/feature/2026-08-14-desktop-companion-cli.md)中。
+
 ## Profile、设置与模型
 
 桌面应用与 `dsh web` 共用 `web` profile 和 Harness home（`$DSH_HOME`，否则为 `~/.dsh`）。Profile 与 home 的 `cordis.patch.yml` 会在启动时参与组合，但由于 Electron 不公开配置 HMR 所用的 Node loader hook，其文件 watcher 被禁用；修改任一 patch 文件后需要重启应用。设置与凭据服务仍在组合中，因此通过「设置」进行的变更（包括模型提供方变更）仍会通过各自的实时服务生效。

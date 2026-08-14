@@ -1,7 +1,7 @@
 /**
  * `dsh plugin --profile <name> <args...>` — profile plugin management as a
- * thin pnpm forwarder: initialize the profile on first use, run
- * `pnpm <args...>` in the profile directory, then reconcile the
+ * pinned pnpm forwarder: initialize the profile on first use, run the
+ * CLI's bundled pnpm in the profile directory, then reconcile the
  * `dsh.profile.bundles` layer list against the installed state (a dependency
  * resolving to a package that declares `dsh.bundle` joins the layer stack; a
  * removed or bundle-less dependency leaves it). Reconciling by installed
@@ -12,7 +12,8 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, join, resolve } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
@@ -26,6 +27,7 @@ import {
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
+const PNPM_ENTRY = join(dirname(createRequire(import.meta.url).resolve('pnpm')), 'bin', 'pnpm.mjs')
 
 /**
  * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
@@ -124,19 +126,14 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
   }
   const before = readProfileManifest(NAME, dir)
-  // Windows resolves pnpm through its .cmd shim, which spawn() refuses
-  // without a shell since the CVE-2024-27980 hardening.
-  const result = spawnSync('pnpm', args.map(argument => anchorPathSpec(argument, process.cwd())), {
+  const result = spawnSync(process.execPath, [
+    PNPM_ENTRY,
+    ...args.map(argument => anchorPathSpec(argument, process.cwd())),
+  ], {
     cwd: dir,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
   })
   if (result.error !== undefined) {
-    const code = (result.error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') {
-      process.stderr.write(`${NAME}: pnpm not found on PATH — install pnpm to manage profile plugins\n`)
-      return 127
-    }
     throw result.error
   }
   const exitCode = result.status ?? 1

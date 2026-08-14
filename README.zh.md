@@ -42,7 +42,7 @@ pnpm run package:desktop
 pnpm run test:desktop:packaged
 ```
 
-打包命令会面向当前宿主与架构构建，在 `dist-desktop/installers/` 下生成 macOS `.dmg`、Windows `.exe` 安装程序或 Linux `.tar.gz` 压缩包。CI 目标、无签名分发行为、传输机制、安全姿态与模型提供方支持见[桌面应用参考](apps/desktop/README.md)。
+打包命令会面向当前宿主与架构构建，在 `dist-desktop/installers/` 下生成 macOS `.dmg`、Windows `.exe` 安装程序或 Linux `.tar.gz` 压缩包。每个打包后的应用还包含版本匹配且自包含的 [`dsh` companion](apps/desktop/README.md#companion-cli)，用于管理 profile 与插件。CI 目标、无签名分发行为、传输机制、安全姿态与模型提供方支持见桌面应用参考。
 
 ## 社区与支持
 

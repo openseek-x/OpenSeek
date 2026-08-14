@@ -42,7 +42,7 @@ pnpm run package:desktop
 pnpm run test:desktop:packaged
 ```
 
-The package command builds for the current host and architecture, writing a `.dmg` on macOS, an `.exe` installer on Windows, or a `.tar.gz` archive on Linux under `dist-desktop/installers/`. See the [desktop application reference](apps/desktop/README.md) for CI targets, unsigned-distribution behavior, transport, security posture, and model-provider support.
+The package command builds for the current host and architecture, writing a `.dmg` on macOS, an `.exe` installer on Windows, or a `.tar.gz` archive on Linux under `dist-desktop/installers/`. Each packaged application also contains a self-contained, version-matched [`dsh` companion](apps/desktop/README.md#companion-cli) for profile and plugin management. See the desktop application reference for CI targets, unsigned-distribution behavior, transport, security posture, and model-provider support.
 
 ## Community and support
 

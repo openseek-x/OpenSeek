@@ -1,8 +1,16 @@
 /** Smoke-test the packaged desktop application through Chromium's CDP endpoint. */
 
-import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { arch } from 'node:os'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { arch, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,6 +30,11 @@ const executable = process.platform === 'darwin'
   : process.platform === 'win32'
     ? join(platformDirectory, 'DeepSeek Harness.exe')
     : join(platformDirectory, 'deepseek-harness')
+const companionCli = process.platform === 'darwin'
+  ? join(platformDirectory, 'DeepSeek Harness.app', 'Contents/MacOS/dsh')
+  : process.platform === 'win32'
+    ? join(platformDirectory, 'dsh.cmd')
+    : join(platformDirectory, 'dsh')
 const STARTUP_TIMEOUT_MS = 60_000
 
 interface DebugPage {
@@ -105,6 +118,69 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<bool
 }
 
 if (!existsSync(executable)) throw new Error(`desktop smoke: package first; missing ${executable}`)
+if (!existsSync(companionCli)) throw new Error(`desktop smoke: packaged companion CLI is missing: ${companionCli}`)
+
+const cliHome = mkdtempSync(join(tmpdir(), 'dsh-desktop-cli-smoke-'))
+try {
+  let companionCommand = companionCli
+  if (process.platform !== 'win32') {
+    const linkDirectory = join(cliHome, 'bin')
+    mkdirSync(linkDirectory)
+    companionCommand = join(linkDirectory, 'dsh')
+    symlinkSync(companionCli, companionCommand)
+  }
+  const bundle = join(cliHome, 'smoke-bundle')
+  mkdirSync(bundle)
+  writeFileSync(join(bundle, 'package.json'), `${JSON.stringify({
+    name: 'dsh-desktop-smoke-bundle',
+    version: '1.0.0',
+    dsh: { bundle: { patch: './cordis.patch.yml' } },
+  }, undefined, 2)}\n`)
+  writeFileSync(join(bundle, 'cordis.patch.yml'), '[]\n')
+  const cliEnvironment = {
+    ...process.env,
+    CI: 'true',
+    DSH_HOME: cliHome,
+    // The companion must use Electron's Node runtime and its bundled pnpm,
+    // not accidentally pass because the build host provides either command.
+    PATH: '',
+  }
+  const runCompanion = (args: string[]): string => {
+    const result = spawnSync(companionCommand, args, {
+      encoding: 'utf8',
+      env: cliEnvironment,
+      killSignal: 'SIGKILL',
+      shell: process.platform === 'win32',
+      timeout: STARTUP_TIMEOUT_MS,
+    })
+    if (result.error !== undefined) throw result.error
+    if (result.status !== 0) {
+      throw new Error(
+        `desktop smoke: companion ${args.join(' ')} failed (${String(result.status)}): ${result.stderr}`,
+      )
+    }
+    return result.stdout.trim()
+  }
+  const version = runCompanion(['--version'])
+  if (version === '') throw new Error('desktop smoke: companion CLI printed no version')
+  runCompanion(['plugin', '--profile', 'desktop-smoke', 'add', bundle])
+  const nodeVersion = runCompanion(['plugin', '--profile', 'desktop-smoke', 'exec', 'node', '--version'])
+  const pnpmVersion = runCompanion(['plugin', '--profile', 'desktop-smoke', 'exec', 'pnpm', '--version'])
+  if (!/^v\d+\./.test(nodeVersion)) throw new Error(`desktop smoke: invalid embedded Node version: ${nodeVersion}`)
+  if (!/^\d+\.\d+\./.test(pnpmVersion)) throw new Error(`desktop smoke: invalid pinned pnpm version: ${pnpmVersion}`)
+  const profileManifest = JSON.parse(
+    readFileSync(join(cliHome, 'profiles', 'desktop-smoke', 'package.json'), 'utf8'),
+  ) as { dsh?: { profile?: { bundles?: unknown } } }
+  const bundles = profileManifest.dsh?.profile?.bundles
+  if (!Array.isArray(bundles) || !bundles.includes('dsh-desktop-smoke-bundle')) {
+    throw new Error('desktop smoke: companion plugin install did not activate its profile bundle')
+  }
+  console.log(
+    `desktop smoke: companion CLI ${version} installed a local profile bundle with ${nodeVersion} / pnpm ${pnpmVersion}`,
+  )
+} finally {
+  rmSync(cliHome, { recursive: true, force: true })
+}
 
 let output = ''
 let debugPort: number | undefined

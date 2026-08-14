@@ -24,7 +24,7 @@
     "build:web": "pnpm --filter @deepseek-ai/dsh-web-frontend run build",
     "desktop": "pnpm run build && pnpm --filter @deepseek-ai/dsh-desktop start",
     "package:desktop": "pnpm run build && pnpm run package:desktop:built",
-    "package:desktop:built": "tsx scripts/package-desktop.ts",
+    "package:desktop:built": "tsx apps/desktop/scripts/package.ts",
     "package:desktop:mac": "pnpm run package:desktop",
     "test:desktop:packaged": "node --import tsx scripts/smoke-desktop.ts",
     "clean": "tsx scripts/clean.ts",

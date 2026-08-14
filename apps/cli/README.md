@@ -11,7 +11,7 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |
-| `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
+| `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins with the CLI's pinned pnpm in the profile directory. |
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
 
@@ -37,6 +37,8 @@ The tree composes over an empty root:
 - then `--patch` overlays
 
 Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
+
+At boot, bare plugin rows resolve from that profile's `node_modules` and then the healed installation dependency closure at `$DSH_HOME/profiles/node_modules`. Node and Electron use the same profile-anchored search order, independent of workspace hoisting or the packaged desktop layout.
 
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 

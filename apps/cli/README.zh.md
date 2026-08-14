@@ -11,7 +11,7 @@
 | `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh web` | `--profile web` 的别名。 |
-| `dsh plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
+| `dsh plugin --profile <name> <pnpm args>` | 在 profile 目录中通过 CLI 锁定版本的 pnpm 管理该 profile 的插件。 |
 
 运行命令时所在的目录将作为默认 workspace 根目录。`web` 和 `headless` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `dsh plugin` 创建。
 
@@ -37,6 +37,8 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 - `--patch` 指定的覆盖层
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
+
+启动时，裸插件条目会先从该 profile 的 `node_modules` 解析，再从 `$DSH_HOME/profiles/node_modules` 中修复后的安装依赖闭包解析。Node 与 Electron 使用相同的 profile 锚定查找顺序，不受 workspace 提升方式或桌面打包布局影响。
 
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
 
