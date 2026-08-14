@@ -1,6 +1,6 @@
-/** Smoke-test the packaged desktop application through Chromium's CDP endpoint. */
+/** Smoke-test the packaged desktop application through local CDP endpoints. */
 
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -36,6 +36,7 @@ const companionCli = process.platform === 'darwin'
     ? join(platformDirectory, 'dsh.cmd')
     : join(platformDirectory, 'dsh')
 const STARTUP_TIMEOUT_MS = 60_000
+const SHUTDOWN_TIMEOUT_MS = 5_000
 const WINDOWS_COMPANION_BUNDLE_ENV = 'DSH_DESKTOP_COMPANION_BUNDLE'
 const WINDOWS_COMPANION_EXECUTABLE_ENV = 'DSH_DESKTOP_COMPANION_EXECUTABLE'
 
@@ -59,63 +60,67 @@ async function waitFor<T>(
   throw new Error(`desktop smoke timed out waiting for ${description}`)
 }
 
-/** Evaluate one expression in the selected renderer through CDP. */
-async function evaluate(webSocketDebuggerUrl: string, expression: string): Promise<unknown> {
+/** Evaluate one expression through a selected CDP endpoint. */
+async function evaluate(
+  webSocketDebuggerUrl: string,
+  expression: string,
+  timeoutMs = STARTUP_TIMEOUT_MS,
+): Promise<unknown> {
   return await new Promise((resolveEvaluation, rejectEvaluation) => {
     const socket = new WebSocket(webSocketDebuggerUrl)
     const timeout = setTimeout(() => {
       socket.close()
-      rejectEvaluation(new Error('desktop smoke timed out waiting for a renderer evaluation'))
-    }, STARTUP_TIMEOUT_MS)
+      rejectEvaluation(new Error('desktop smoke timed out waiting for a CDP evaluation'))
+    }, timeoutMs)
     socket.addEventListener('open', () => {
       socket.send(JSON.stringify({
         id: 1,
         method: 'Runtime.evaluate',
-        params: { expression, returnByValue: true },
+        params: { expression, returnByValue: true, awaitPromise: true },
       }))
     })
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(String(event.data)) as {
         id?: number
         error?: { message?: string }
-        result?: { result?: { value?: unknown } }
+        result?: {
+          exceptionDetails?: { exception?: { description?: string }; text?: string }
+          result?: { value?: unknown }
+        }
       }
       if (message.id !== 1) return
       clearTimeout(timeout)
       socket.close()
       if (message.error !== undefined) {
-        rejectEvaluation(new Error(message.error.message ?? 'desktop smoke renderer evaluation failed'))
+        rejectEvaluation(new Error(message.error.message ?? 'desktop smoke CDP evaluation failed'))
+      } else if (message.result?.exceptionDetails !== undefined) {
+        rejectEvaluation(new Error(
+          message.result.exceptionDetails.exception?.description
+          ?? message.result.exceptionDetails.text
+          ?? 'desktop smoke CDP evaluation threw',
+        ))
       } else {
         resolveEvaluation(message.result?.result?.value)
       }
     })
     socket.addEventListener('error', () => {
       clearTimeout(timeout)
-      rejectEvaluation(new Error('desktop smoke could not connect to the renderer endpoint'))
+      rejectEvaluation(new Error('desktop smoke could not connect to the CDP endpoint'))
     })
   })
 }
 
-/** Wait for the packaged process to exit within a bounded interval. */
-async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
-  if (child.exitCode !== null || child.signalCode !== null) return true
+/** Wait for the packaged process and its captured output streams to close. */
+async function waitForClose(closed: Promise<void>, timeoutMs: number): Promise<boolean> {
   return await new Promise((resolveExit) => {
     const exited = (): void => {
       clearTimeout(timeout)
       resolveExit(true)
     }
     const timeout = setTimeout(() => {
-      child.off('exit', exited)
       resolveExit(false)
     }, timeoutMs)
-    child.once('exit', exited)
-    // The process can exit after the caller's first check but before this
-    // listener is installed. Recheck only after both completion paths exist.
-    if (child.exitCode !== null || child.signalCode !== null) {
-      child.off('exit', exited)
-      clearTimeout(timeout)
-      resolveExit(true)
-    }
+    void closed.then(exited)
   })
 }
 
@@ -204,15 +209,21 @@ let output = ''
 let debugPort: number | undefined
 let ready = false
 let testFailure: Error | undefined
-const child = spawn(executable, ['--remote-debugging-port=0'], {
+let mainWebSocketDebuggerUrl: string | undefined
+const child = spawn(executable, ['--inspect=0', '--remote-debugging-port=0'], {
   cwd: repositoryRoot,
   stdio: ['ignore', 'pipe', 'pipe'],
+})
+const childClosed = new Promise<void>((resolveClosed) => {
+  child.once('close', () => { resolveClosed() })
 })
 const capture = (chunk: Buffer): void => {
   output += chunk.toString('utf8')
   ready ||= output.includes('dsh desktop: ready')
-  const match = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(output)
-  if (match?.[1] !== undefined) debugPort = Number(match[1])
+  const browserMatch = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(output)
+  if (browserMatch?.[1] !== undefined) debugPort = Number(browserMatch[1])
+  const mainMatch = /Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/\S+)/.exec(output)
+  if (mainMatch?.[1] !== undefined) mainWebSocketDebuggerUrl = mainMatch[1]
 }
 child.stdout.on('data', capture)
 child.stderr.on('data', capture)
@@ -222,7 +233,7 @@ try {
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`desktop smoke exited during startup (${String(child.exitCode ?? child.signalCode)})`)
     }
-    return ready ? debugPort : undefined
+    return ready && mainWebSocketDebuggerUrl !== undefined ? debugPort : undefined
   }, 'the packaged application')
   const page = await waitFor(async () => {
     try {
@@ -236,7 +247,7 @@ try {
   const rendered = await waitFor(async () => {
     const current = await evaluate(
       page.webSocketDebuggerUrl,
-      'JSON.stringify({ title: document.title, body: document.body.innerText })',
+      'JSON.stringify({ title: document.title, body: document.body?.innerText })',
     )
     if (typeof current !== 'string') return undefined
     const state = JSON.parse(current) as { title?: unknown; body?: unknown }
@@ -249,19 +260,74 @@ try {
       ? { title: state.title, body: state.body }
       : undefined
   }, 'the composed desktop interface')
-  console.log(`desktop smoke: ready at ${page.url}; rendered ${String(rendered.body.trim().length)} characters`)
+  const updateState = await waitFor(async () => {
+    const current = await evaluate(page.webSocketDebuggerUrl, `void 0; (async () => {
+      const bridge = globalThis.dshDesktopUpdate
+      if (typeof bridge?.getState !== 'function'
+        || typeof bridge?.act !== 'function'
+        || typeof bridge?.onState !== 'function') return undefined
+      const unsubscribe = bridge.onState(() => undefined)
+      if (typeof unsubscribe !== 'function') return undefined
+      unsubscribe()
+      const state = await bridge.getState()
+      return JSON.stringify(state)
+    })()`)
+    if (typeof current !== 'string') return undefined
+    const state = JSON.parse(current) as { currentVersion?: unknown; revision?: unknown; status?: unknown }
+    return typeof state.currentVersion === 'string'
+      && typeof state.revision === 'number'
+      && typeof state.status === 'string'
+      ? state
+      : undefined
+  }, 'the context-isolated desktop update bridge')
+  console.log(
+    `desktop smoke: ready at ${page.url}; rendered ${String(rendered.body.trim().length)} characters; updater ${String(updateState.status)}`,
+  )
 } catch (error) {
   testFailure = error instanceof Error
     ? error
     : new Error('desktop smoke failed with a non-Error rejection')
   console.error(output)
 } finally {
-  child.kill('SIGTERM')
-  if (!(await waitForExit(child, 5_000))) {
+  const running = child.exitCode === null && child.signalCode === null
+  let gracefulShutdownRequested = false
+  let shutdownStartedAt = Date.now()
+  if (running) {
+    try {
+      shutdownStartedAt = Date.now()
+      if (mainWebSocketDebuggerUrl === undefined) {
+        throw new Error('desktop smoke has no main-process debugger endpoint for graceful shutdown')
+      }
+      const handled = await evaluate(mainWebSocketDebuggerUrl, "process.emit('SIGTERM')", SHUTDOWN_TIMEOUT_MS)
+      if (handled !== true) throw new Error('desktop smoke main process did not handle SIGTERM')
+      gracefulShutdownRequested = true
+    } catch (error) {
+      testFailure ??= error instanceof Error
+        ? error
+        : new Error('desktop smoke could not request graceful shutdown')
+    }
+  } else {
+    testFailure ??= new Error('desktop smoke: packaged application exited before graceful shutdown')
+  }
+
+  const remainingMs = Math.max(0, SHUTDOWN_TIMEOUT_MS - (Date.now() - shutdownStartedAt))
+  const exited = gracefulShutdownRequested && await waitForClose(childClosed, remainingMs)
+  if (!exited) {
+    if (gracefulShutdownRequested) {
+      testFailure ??= new Error(
+        `desktop smoke: packaged application did not exit within ${String(SHUTDOWN_TIMEOUT_MS)}ms`,
+      )
+    }
     child.kill('SIGKILL')
-    if (!(await waitForExit(child, 5_000))) {
+    if (!(await waitForClose(childClosed, SHUTDOWN_TIMEOUT_MS))) {
       testFailure ??= new Error('desktop smoke: packaged application could not be cleaned up')
     }
+  } else if (child.exitCode !== 0 || child.signalCode !== null) {
+    testFailure ??= new Error(
+      `desktop smoke: packaged application shutdown was not clean (exitCode=${String(child.exitCode)}, signal=${String(child.signalCode)})`,
+    )
+  } else if (!output.includes('dsh desktop: shutdown quiesced')) {
+    testFailure ??= new Error('desktop smoke: packaged application bypassed coordinated shutdown')
   }
 }
 

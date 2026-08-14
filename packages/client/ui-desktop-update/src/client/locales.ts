@@ -1,0 +1,68 @@
+/** `desktop.update` dictionaries for Settings and the frame overlay. */
+
+/** Simplified Chinese dictionary (the key-set source of truth). */
+export const zh = {
+  'row.title': '自动更新',
+  'row.description': '从签名的 GitHub Release 通道检查桌面版更新。更新只会在你确认后下载和重启安装。',
+  'version.current': '当前版本：{version}',
+  'policy.background': '后台定期检查',
+  'policy.startup': '仅启动时检查',
+  'policy.manual': '仅手动检查',
+  'policy.disabled': '关闭更新检查',
+  'status.loading': '正在连接更新服务…',
+  'status.idle': '等待下一次检查',
+  'status.upToDate': '当前已是最新版本',
+  'status.checking': '正在检查更新…',
+  'status.available': '发现新版本 {version}',
+  'status.downloading': '正在下载 {version}（{percent}%）',
+  'status.ready': '版本 {version} 已下载，重启后安装',
+  'status.error': '更新检查失败：{message}',
+  'status.disabled.development': '源码运行不会连接发布通道',
+  'status.disabled.updates-not-enabled': '此安装包未启用自动更新',
+  'status.disabled.unsupported-platform': 'Linux 压缩包暂不支持原地更新',
+  'status.disabled.not-installed': '请先把应用移入 Applications 文件夹',
+  'status.disabled.policy': '更新检查已关闭',
+  'action.check': '检查更新',
+  'action.download': '下载更新',
+  'action.restart': '重启并安装',
+  'action.releases': '查看发布页',
+  'toast.available': 'DeepSeek Harness {version} 可用',
+  'toast.ready': '更新已准备好',
+  'toast.upToDate': 'DeepSeek Harness 已是最新版本',
+  'toast.close': '关闭更新提示',
+} satisfies Record<string, string>
+
+/** The desktop.update namespace key union. */
+export type DesktopUpdateKey = keyof typeof zh
+
+/** English dictionary, checked complete against the Chinese key set. */
+export const en = {
+  'row.title': 'Automatic updates',
+  'row.description': 'Check the signed GitHub Release channel for desktop updates. Downloads and restarts happen only after you confirm.',
+  'version.current': 'Current version: {version}',
+  'policy.background': 'Check periodically',
+  'policy.startup': 'Check at startup',
+  'policy.manual': 'Manual checks only',
+  'policy.disabled': 'Disable update checks',
+  'status.loading': 'Connecting to the update service…',
+  'status.idle': 'Waiting for the next check',
+  'status.upToDate': 'You have the latest version',
+  'status.checking': 'Checking for updates…',
+  'status.available': 'Version {version} is available',
+  'status.downloading': 'Downloading {version} ({percent}%)',
+  'status.ready': 'Version {version} is downloaded and will install after restart',
+  'status.error': 'Update check failed: {message}',
+  'status.disabled.development': 'Source runs do not connect to the release channel',
+  'status.disabled.updates-not-enabled': 'This build does not enable automatic updates',
+  'status.disabled.unsupported-platform': 'Linux archives do not support in-place updates yet',
+  'status.disabled.not-installed': 'Move the app into the Applications folder first',
+  'status.disabled.policy': 'Update checks are disabled',
+  'action.check': 'Check for updates',
+  'action.download': 'Download update',
+  'action.restart': 'Restart and install',
+  'action.releases': 'View releases',
+  'toast.available': 'DeepSeek Harness {version} is available',
+  'toast.ready': 'Update ready',
+  'toast.upToDate': 'DeepSeek Harness is up to date',
+  'toast.close': 'Dismiss update notice',
+} satisfies Record<DesktopUpdateKey, string>

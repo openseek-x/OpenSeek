@@ -8,6 +8,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { inspect } from 'node:util'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   app,
   BrowserWindow,
@@ -20,9 +21,16 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import {
+  DESKTOP_UPDATE_SETTINGS_NAMESPACE,
+  isDesktopUpdateAction,
+  isDesktopUpdatePolicy,
+  type DesktopUpdatePolicy,
+} from '@deepseek-ai/dsh-client-connection/desktop-update'
 import { runProfile, type RunProfileOptions } from '@deepseek-ai/dsh/profile-boot'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import { injectBootManifest, type ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
+import { settingsNamespace, type SettingsProvider } from '@deepseek-ai/dsh-settings'
 import {
   IPC_FETCH,
   IPC_FETCH_CANCEL,
@@ -30,12 +38,25 @@ import {
   IPC_STREAM_CANCEL,
   IPC_STREAM_EVENT,
   IPC_STREAM_OPEN,
+  IPC_UPDATE_ACTION,
+  IPC_UPDATE_GET_STATE,
+  IPC_UPDATE_STATE,
   MAX_REQUEST_BODY_BYTES,
   type IpcDownloadRequest,
   type IpcRequest,
   type IpcResponse,
   type IpcStreamEvent,
 } from './ipc.ts'
+import type { DesktopUpdateController, DesktopUpdatePreferences } from './update-controller.ts'
+import {
+  createDesktopProfileLifecycle,
+  createDesktopShutdownRequest,
+  finalizeDesktopShutdown,
+  handleDesktopSignal,
+  reportDesktopFailure,
+  type DesktopShutdownIntent,
+} from './shutdown.ts'
+import { createDesktopUpdater } from './updater.ts'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'dsh',
@@ -50,6 +71,7 @@ protocol.registerSchemesAsPrivileged([{
 
 const APP_ORIGIN = 'dsh://app'
 const APP_URL = `${APP_ORIGIN}/`
+const UPDATE_SETTINGS_NAMESPACE = settingsNamespace(DESKTOP_UPDATE_SETTINGS_NAMESPACE)
 const CSP = [
   "default-src 'self' data: blob:",
   // The shipped web bundle compiles Cordis config expressions dynamically.
@@ -70,8 +92,11 @@ const CSP = [
 let window: BrowserWindow | undefined
 let connection: HostConnectionHandle | undefined
 let modules: ClientModuleRegistry | undefined
-let shutdown: Awaited<ReturnType<typeof runProfile>>['shutdown'] | undefined
+let updates: DesktopUpdateController | undefined
+let disposeUpdateBroadcast: (() => void) | undefined
 let quitting = false
+let finalizingQuit = false
+const profileLifecycle = createDesktopProfileLifecycle((code) => { void requestShutdown('quit', code) })
 
 const requests = new Map<string, AbortController>()
 const streams = new Map<string, AbortController>()
@@ -80,22 +105,55 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function updatePolicyFrom(value: unknown): DesktopUpdatePolicy {
+  if (typeof value === 'object'
+    && value !== null
+    && 'policy' in value
+    && isDesktopUpdatePolicy(value.policy)) return value.policy
+  throw new TypeError('desktop update settings are unavailable or invalid')
+}
+
+function createUpdatePreferences(ctx: Context, settings: SettingsProvider): DesktopUpdatePreferences {
+  return {
+    getPolicy: () => updatePolicyFrom(settings.get(UPDATE_SETTINGS_NAMESPACE)),
+    subscribe: listener => ctx.on('settings/updated', (namespace, next) => {
+      if (namespace === UPDATE_SETTINGS_NAMESPACE) listener(updatePolicyFrom(next))
+    }),
+  }
+}
+
+function isHeaderPair(value: unknown): value is [string, string] {
+  return Array.isArray(value)
+    && value.length === 2
+    && typeof value[0] === 'string'
+    && typeof value[1] === 'string'
+}
+
 function safeRequest(value: unknown): IpcRequest {
   if (typeof value !== 'object' || value === null) throw new TypeError('desktop IPC request must be an object')
-  const candidate = value as Partial<IpcRequest>
-  if (typeof candidate.id !== 'string' || candidate.id.length > 128) throw new TypeError('desktop IPC request id is invalid')
+  const candidate = value as Record<string, unknown>
+  if (typeof candidate.id !== 'string' || candidate.id.length === 0 || candidate.id.length > 128) {
+    throw new TypeError('desktop IPC request id is invalid')
+  }
   if (typeof candidate.url !== 'string' || typeof candidate.method !== 'string' || !Array.isArray(candidate.headers)) {
     throw new TypeError('desktop IPC request metadata is invalid')
   }
   const url = new URL(candidate.url)
   if (url.protocol !== 'dsh:' || url.host !== 'app') throw new TypeError('desktop IPC request URL is outside the application origin')
-  if (!candidate.headers.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(value => typeof value === 'string'))) {
+  if (!candidate.headers.every(isHeaderPair)) {
     throw new TypeError('desktop IPC request headers are invalid')
   }
-  if (candidate.body !== undefined && (!(candidate.body instanceof Uint8Array) || candidate.body.byteLength > MAX_REQUEST_BODY_BYTES)) {
+  const body = candidate.body
+  if (body !== undefined && (!(body instanceof Uint8Array) || body.byteLength > MAX_REQUEST_BODY_BYTES)) {
     throw new TypeError('desktop IPC request body is invalid or exceeds the carrier limit')
   }
-  return candidate as IpcRequest
+  return {
+    id: candidate.id,
+    url: candidate.url,
+    method: candidate.method,
+    headers: candidate.headers,
+    ...(body === undefined ? {} : { body }),
+  }
 }
 
 function requestOf(value: unknown, signal: AbortSignal): Request {
@@ -140,7 +198,7 @@ function emitStream(event: IpcMainEvent, payload: IpcStreamEvent): void {
   if (!event.sender.isDestroyed()) event.sender.send(IPC_STREAM_EVENT, payload)
 }
 
-function registerIpc(): void {
+function registerIpc(updater: DesktopUpdateController): void {
   ipcMain.handle(IPC_FETCH, async (event, value: unknown) => {
     if (quitting) {
       return {
@@ -229,7 +287,7 @@ function registerIpc(): void {
     const owner = window
     if (owner === undefined) throw new Error('desktop window is not available')
     const result = await dialog.showSaveDialog(owner, { defaultPath: filename })
-    if (result.canceled || result.filePath === undefined) return
+    if (result.canceled) return
     const active = connection
     if (active === undefined) throw new Error('desktop host is not ready')
     const abort = new AbortController()
@@ -244,6 +302,32 @@ function registerIpc(): void {
       )
     } finally {
       requests.delete(request.id)
+    }
+  })
+
+  ipcMain.handle(IPC_UPDATE_GET_STATE, (event) => {
+    assertRenderer(event)
+    return updater.getState()
+  })
+
+  ipcMain.handle(IPC_UPDATE_ACTION, async (event, value: unknown) => {
+    assertRenderer(event)
+    if (quitting) throw new Error('desktop host is shutting down')
+    if (!isDesktopUpdateAction(value)) throw new TypeError('desktop update action is invalid')
+    switch (value) {
+      case 'check': return await updater.check(true)
+      case 'download': return await updater.download()
+      case 'install': return await updater.install()
+      case 'open-release': return await updater.openReleases()
+    }
+  })
+}
+
+function broadcastUpdateState(updater: DesktopUpdateController): () => void {
+  return updater.subscribe((state) => {
+    const owner = window
+    if (owner !== undefined && !owner.webContents.isDestroyed()) {
+      owner.webContents.send(IPC_UPDATE_STATE, state)
     }
   })
 }
@@ -390,65 +474,126 @@ async function bootDesktop(): Promise<void> {
     patchFiles: [fileURLToPath(new URL('../config/desktop.patch.yml', import.meta.url))],
     args: [],
     watchConfig: false,
-    handleSignals: false,
+    lifecycle: profileLifecycle.profileLifecycle,
   }
   console.log('dsh desktop: booting profile')
+  profileLifecycle.beginBoot()
   const result = await runProfile(options)
+  if (requestShutdown.isRequested()) return
   console.log('dsh desktop: profile ready')
-  shutdown = result.shutdown
-  connection = result.ctx.get('connection') as HostConnectionHandle | undefined
-  modules = result.ctx.get('clientModules') as ClientModuleRegistry | undefined
-  if (connection === undefined || modules === undefined) throw new Error('desktop: Connection or clientModules failed to mount')
+  connection = result.ctx.get('connection')
+  modules = result.ctx.get('clientModules')
+  const settings = result.ctx.get('settings')
+  if (connection === undefined || modules === undefined || settings === undefined) {
+    throw new Error('desktop: Connection, clientModules, or settings failed to mount')
+  }
+  const updatePreferences = createUpdatePreferences(result.ctx, settings)
+  const updater = await createDesktopUpdater(updatePreferences, () => requestShutdown('install'))
+  if (requestShutdown.isRequested()) return
+  updates = updater
   console.log('dsh desktop: context ready')
   registerDesktopSurface()
-  registerIpc()
+  registerIpc(updates)
+  disposeUpdateBroadcast = broadcastUpdateState(updates)
   window = createWindow()
+  updates.start()
   console.log('dsh desktop: ready')
 }
+
+async function runShutdown(intent: DesktopShutdownIntent, exitCode: number): Promise<void> {
+  quitting = true
+  const updater = updates
+  const disposeBroadcast = disposeUpdateBroadcast
+  disposeUpdateBroadcast = undefined
+  await finalizeDesktopShutdown(intent, exitCode, {
+    cleanup: [
+      () => { updater?.stop() },
+      () => { disposeBroadcast?.() },
+      ...[...requests.values()].map(request => () => { request.abort() }),
+      ...[...streams.values()].map(stream => () => { stream.abort() }),
+    ],
+    quiesce: () => profileLifecycle.quiesce(exitCode),
+    ...(updater === undefined
+      ? {}
+      : {
+        quitAndInstall: async () => {
+          await updater.quitAndInstall(() => {
+            finalizingQuit = true
+          })
+        },
+      }),
+    quit: () => {
+      console.log('dsh desktop: shutdown quiesced')
+      finalizingQuit = true
+      app.quit()
+    },
+    exit: (code) => {
+      finalizingQuit = true
+      app.exit(code)
+    },
+    report: (stage, error) => {
+      console.error(`dsh desktop: ${stage} failed:`, inspect(error, { depth: Number.POSITIVE_INFINITY }))
+    },
+  })
+}
+
+const requestShutdown = createDesktopShutdownRequest(runShutdown)
+
+function handleSignal(exitCode: number): void {
+  handleDesktopSignal(exitCode, {
+    shuttingDown: quitting,
+    requestShutdown: (code) => { void requestShutdown('quit', code) },
+    forceExit: (code) => { app.exit(code) },
+    scheduleForceExit: (code) => { setTimeout(() => { app.exit(code) }, 7_000).unref() },
+  })
+}
+
+const ownsInstanceLock = app.requestSingleInstanceLock()
+
+app.on('second-instance', () => {
+  const owner = window
+  if (owner === undefined) return
+  if (owner.isMinimized()) owner.restore()
+  owner.show()
+  owner.focus()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('activate', () => {
-  if (window === undefined && connection !== undefined) window = createWindow()
+  if (!quitting && window === undefined && connection !== undefined) window = createWindow()
 })
 
 app.on('before-quit', (event) => {
-  if (quitting) return
+  if (finalizingQuit) return
   event.preventDefault()
-  quitting = true
-  for (const request of requests.values()) request.abort()
-  for (const stream of streams.values()) stream.abort()
-  if (shutdown === undefined) {
-    app.quit()
-    return
-  }
-  void shutdown.shutdown(0).finally(() => { app.quit() })
+  void requestShutdown('quit')
 })
 
 process.once('SIGINT', () => {
-  if (quitting) {
-    app.exit(130)
-    return
-  }
-  app.quit()
-  setTimeout(() => { app.exit(130) }, 7_000).unref()
+  handleSignal(130)
 })
 process.once('SIGTERM', () => {
-  if (quitting) {
-    app.exit(0)
-    return
-  }
-  app.quit()
-  setTimeout(() => { app.exit(0) }, 7_000).unref()
+  handleSignal(0)
 })
 
-await app.whenReady()
-try {
-  await bootDesktop()
-} catch (error) {
-  console.error('dsh desktop: startup failed:', inspect(error, { depth: Number.POSITIVE_INFINITY }))
-  dialog.showErrorBox('DeepSeek Harness could not start', messageOf(error))
-  app.exit(1)
+if (!ownsInstanceLock) {
+  app.quit()
+} else {
+  await app.whenReady()
+  try {
+    await bootDesktop()
+  } catch (error) {
+    const shouldReport = !requestShutdown.isRequested()
+    const shutdown = requestShutdown('quit', 1)
+    if (shouldReport) {
+      reportDesktopFailure(() => {
+        console.error('dsh desktop: startup failed:', inspect(error, { depth: Number.POSITIVE_INFINITY }))
+        dialog.showErrorBox('DeepSeek Harness could not start', messageOf(error))
+      })
+    }
+    await shutdown
+  }
 }

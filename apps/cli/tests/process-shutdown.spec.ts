@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  createCallerOwnedShutdown,
   createProcessShutdown,
   PROCESS_SHUTDOWN_TIMEOUT_MS,
 } from '../src/process-shutdown.ts'
@@ -175,5 +176,56 @@ describe('process shutdown', () => {
     expect(complete).toHaveBeenCalledOnce()
     expect(exit).toHaveBeenCalledOnce()
     expect(exit).toHaveBeenCalledWith(130)
+  })
+})
+
+describe('caller-owned shutdown', () => {
+  it('resolves after quiescence without writing process exit state', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(_code => undefined as never)
+    const originalExitCode = process.exitCode
+    process.exitCode = undefined
+    const shutdown = createCallerOwnedShutdown(() => Promise.resolve())
+
+    try {
+      await shutdown.shutdown(7)
+
+      expect(process.exitCode).toBeUndefined()
+      expect(exit).not.toHaveBeenCalled()
+    } finally {
+      process.exitCode = originalExitCode
+    }
+  })
+
+  it('rejects a disposal failure and coalesces callers', async () => {
+    const disposal = deferred()
+    const shutdown = createCallerOwnedShutdown(() => disposal.promise)
+    const first = shutdown.shutdown(0)
+    const second = shutdown.shutdown(1)
+
+    expect(second).toBe(first)
+    const failure = new Error('dispose failed')
+    disposal.reject(failure)
+    await expect(first).rejects.toBe(failure)
+  })
+
+  it('rejects at the shutdown bound and consumes later disposal settlement', async () => {
+    vi.useFakeTimers()
+    const disposal = deferred()
+    const shutdown = createCallerOwnedShutdown(() => disposal.promise, 25)
+    const pending = shutdown.shutdown(0)
+
+    await vi.advanceTimersByTimeAsync(24)
+    let settled = false
+    void pending.then(
+      () => { settled = true },
+      () => { settled = true },
+    )
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(pending).rejects.toThrow('application shutdown exceeded 25ms')
+
+    disposal.reject(new Error('late failure'))
+    await Promise.resolve()
   })
 })

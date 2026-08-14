@@ -4,16 +4,26 @@ artifactName: DeepSeek-Harness-${version}-${os}-${arch}.${ext}
 asar: false
 npmRebuild: false
 compression: normal
+electronUpdaterCompatibility: '>= 2.16'
 
 directories:
   output: ../../dist-desktop/installers
 
 mac:
-  target: dmg
+  target:
+    - dmg
+    - zip
   category: public.app-category.developer-tools
   icon: assets/icon.icns
+  # Electron Packager signs and notarizes the prepackaged application.
   identity: null
-  hardenedRuntime: false
+  notarize: false
+  publish:
+    provider: github
+    owner: ${env.DESKTOP_UPDATE_OWNER}
+    repo: ${env.DESKTOP_UPDATE_REPOSITORY_NAME}
+    channel: ${env.DESKTOP_UPDATE_CHANNEL}
+    publishAutoUpdate: true
 
 dmg:
   title: DeepSeek Harness ${version}
@@ -21,7 +31,13 @@ dmg:
 win:
   target: nsis
   icon: assets/icon.ico
-  signExecutable: false
+  signExecutable: true
+  publish:
+    provider: github
+    owner: ${env.DESKTOP_UPDATE_OWNER}
+    repo: ${env.DESKTOP_UPDATE_REPOSITORY_NAME}
+    channel: ${env.DESKTOP_UPDATE_CHANNEL}
+    publishAutoUpdate: true
 
 nsis:
   oneClick: false

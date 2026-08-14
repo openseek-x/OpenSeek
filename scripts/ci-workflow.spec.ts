@@ -208,6 +208,166 @@ describe('CI workflow', () => {
   })
 })
 
+describe('Desktop packages workflow', () => {
+  it('derives every privileged build step from one trusted tag-push classification', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
+    const releaseContext = workflowJob(workflow, 'release-context')
+    const packageJob = workflowJob(workflow, 'package')
+    const publish = workflowJob(workflow, 'publish')
+    if (!Array.isArray(releaseContext.steps) || !Array.isArray(packageJob.steps)) {
+      throw new TypeError('desktop package workflow must define classification and package steps')
+    }
+
+    const classify = releaseContext.steps.filter(isRecord).find(step => step.id === 'classify')
+    const steps = packageJob.steps.filter(isRecord)
+    const verifyTag = steps.find(step => step.name === 'Verify release tag')
+    const macSigning = steps.find(step => step.name === 'Configure macOS release signing')
+    const windowsSigning = steps.find(step => step.name === 'Configure Windows release signing')
+    const build = steps.find(step => step.name === 'Build package')
+    const verifyMetadata = steps.find(step => step.name === 'Verify updater metadata')
+    const verifyMac = steps.find(step => step.name === 'Verify macOS release signature and notarization')
+    const verifyWindows = steps.find(step => step.name === 'Verify Windows release signatures')
+    if (!isRecord(classify?.env) || !isRecord(build?.env)) {
+      throw new TypeError('desktop package workflow must expose release classification and build environment')
+    }
+
+    const releasePredicate = "needs.release-context.outputs.release == 'true'"
+    expect(classify.env.RELEASE_BUILD).toBe(
+      "${{ github.event_name == 'push' && github.ref_type == 'tag' && 'true' || 'false' }}",
+    )
+    expect(packageJob.needs).toBe('release-context')
+    expect(verifyTag?.if).toBe(releasePredicate)
+    expect(macSigning?.if).toBe(`runner.os == 'macOS' && ${releasePredicate}`)
+    expect(windowsSigning?.if).toBe(`runner.os == 'Windows' && ${releasePredicate}`)
+    expect(verifyMac?.if).toBe(`runner.os == 'macOS' && ${releasePredicate}`)
+    expect(verifyWindows?.if).toBe(`runner.os == 'Windows' && ${releasePredicate}`)
+    expect(build.env.DESKTOP_RELEASE_BUILD).toBe('${{ needs.release-context.outputs.release }}')
+    expect(build.env.DESKTOP_UPDATES_ENABLED).toContain(releasePredicate)
+    expect(verifyMetadata).toMatchObject({
+      if: "runner.os != 'Linux'",
+      run: 'pnpm exec tsx scripts/verify-desktop-update-metadata.ts dist-desktop/installers ${{ matrix.platform }}',
+    })
+    expect(steps.indexOf(verifyMetadata ?? {})).toBeLessThan(
+      steps.findIndex(step => step.uses === 'actions/upload-artifact@v7'),
+    )
+
+    for (const name of [
+      'DESKTOP_MAC_SIGN_IDENTITY',
+      'APPLE_ID',
+      'APPLE_APP_SPECIFIC_PASSWORD',
+      'APPLE_TEAM_ID',
+      'WINDOWS_CERTIFICATE_FILE',
+      'WINDOWS_CERTIFICATE_PASSWORD',
+      'CSC_LINK',
+      'CSC_KEY_PASSWORD',
+    ]) {
+      expect(build.env[name], `${name} must stay release-gated`).toContain(releasePredicate)
+    }
+    expect(publish.if).toBe(releasePredicate)
+    expect(publish.needs).toEqual(['release-context', 'package'])
+  })
+
+  it('limits the desktop-release environment and signing secrets to trusted release jobs', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
+    const packageJob = workflowJob(workflow, 'package')
+    const publish = workflowJob(workflow, 'publish')
+    if (!isRecord(workflow.jobs)
+      || !isRecord(packageJob.strategy)
+      || !isRecord(packageJob.strategy.matrix)
+      || !Array.isArray(packageJob.strategy.matrix.include)
+      || !Array.isArray(packageJob.steps)) {
+      throw new TypeError('desktop package workflow must define its release matrix and package steps')
+    }
+
+    const releasePredicate = "needs.release-context.outputs.release == 'true'"
+    expect(Object.entries(workflow.jobs)
+      .filter(([, job]) => isRecord(job) && job.environment !== undefined)
+      .map(([name]) => name))
+      .toEqual(['package', 'publish'])
+    expect(Object.entries(workflow.jobs)
+      .filter(([, job]) => JSON.stringify(job).includes('secrets.'))
+      .map(([name]) => name))
+      .toEqual(['package'])
+    expect(packageJob.environment).toBe(
+      "${{ needs.release-context.outputs.release == 'true' && matrix.release_environment || 'desktop-package' }}",
+    )
+    expect(packageJob.strategy.matrix.include).toEqual([
+      expect.objectContaining({ platform: 'macos-arm64', release_environment: 'desktop-release' }),
+      expect.objectContaining({ platform: 'macos-x64', release_environment: 'desktop-release' }),
+      expect.objectContaining({ platform: 'windows-x64', release_environment: 'desktop-release' }),
+      expect.objectContaining({ platform: 'linux-x64', release_environment: 'desktop-package' }),
+    ])
+    expect(publish).toMatchObject({
+      if: releasePredicate,
+      environment: 'desktop-release',
+    })
+
+    const steps = packageJob.steps.filter(isRecord)
+    const macSigning = steps.find(step => step.name === 'Configure macOS release signing')
+    const windowsSigning = steps.find(step => step.name === 'Configure Windows release signing')
+    const build = steps.find(step => step.name === 'Build package')
+    if (!isRecord(macSigning?.env) || !isRecord(windowsSigning?.env) || !isRecord(build?.env)) {
+      throw new TypeError('desktop package workflow must define signing and build environments')
+    }
+
+    expect(macSigning.if).toBe(`runner.os == 'macOS' && ${releasePredicate}`)
+    expect(windowsSigning.if).toBe(`runner.os == 'Windows' && ${releasePredicate}`)
+    expect(steps
+      .filter(step => JSON.stringify(step).includes('secrets.'))
+      .map(step => step.name))
+      .toEqual([
+        'Configure macOS release signing',
+        'Configure Windows release signing',
+        'Build package',
+      ])
+
+    const secretReferences = [...JSON.stringify(steps).matchAll(/secrets\.([A-Z0-9_]+)/g)]
+      .map(match => match[1])
+    expect([...new Set(secretReferences)].sort()).toEqual([
+      'APPLE_APP_SPECIFIC_PASSWORD',
+      'APPLE_ID',
+      'APPLE_TEAM_ID',
+      'MACOS_CERTIFICATE_BASE64',
+      'MACOS_CERTIFICATE_PASSWORD',
+      'MACOS_SIGN_IDENTITY',
+      'WINDOWS_CERTIFICATE_BASE64',
+      'WINDOWS_CERTIFICATE_PASSWORD',
+    ])
+
+    for (const name of [
+      'DESKTOP_MAC_SIGN_IDENTITY',
+      'APPLE_ID',
+      'APPLE_APP_SPECIFIC_PASSWORD',
+      'APPLE_TEAM_ID',
+    ]) {
+      expect(build.env[name], `${name} must stay tag-release and macOS gated`).toContain(
+        `${releasePredicate} && runner.os == 'macOS' && secrets.`,
+      )
+    }
+    for (const name of ['WINDOWS_CERTIFICATE_PASSWORD', 'CSC_KEY_PASSWORD']) {
+      expect(build.env[name], `${name} must stay tag-release and Windows gated`).toContain(
+        `${releasePredicate} && runner.os == 'Windows' && secrets.`,
+      )
+    }
+  })
+
+  it('rejects extra updater metadata before creating a draft release', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
+    const publish = workflowJob(workflow, 'publish')
+    if (!Array.isArray(publish.steps)) throw new TypeError('desktop publish job must define steps')
+    const verify = publish.steps.filter(isRecord)
+      .find(step => step.name === 'Verify release assets and record checksums')
+    if (typeof verify?.run !== 'string') throw new TypeError('desktop publish job must verify release assets')
+
+    expect(verify.run).toContain(
+      '[ "$(find . -maxdepth 1 -type f -name \'*.blockmap\' | wc -l)" -eq 3 ]',
+    )
+    expect(verify.run).toContain(
+      '[ "$(find . -maxdepth 1 -type f -name \'*.yml\' | wc -l)" -eq 3 ]',
+    )
+  })
+})
+
 describe('E2B e2e workflow', () => {
   it('is manual-only and fails loud before running the focused live suite', () => {
     const workflow = loadWorkflow('.github/workflows/e2b-e2e.yml')

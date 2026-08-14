@@ -48,4 +48,4 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.md#source-execution)为准。
 
-导出的 `@deepseek-ai/dsh/profile-boot` 入口允许其他应用复用 profile 组合，而不调用 CLI 解析器。`runProfile` 默认监视 profile patch，并接管 `SIGINT`／`SIGTERM`；当 GUI 嵌入方的 loader 无法支持配置 HMR 时可设置 `watchConfig: false`，当原生应用生命周期负责关闭时可设置 `handleSignals: false`。随附的嵌入方是[桌面应用](../desktop/README.md)。
+导出的 `@deepseek-ai/dsh/profile-boot` 入口允许其他应用复用 profile 组合，而不调用 CLI 解析器。`runProfile` 默认监视 profile patch，并使用 `{ kind: 'process' }` 生命周期；当 GUI 嵌入方的 loader 无法支持配置 HMR 时可设置 `watchConfig: false`，当原生应用负责关闭时可传入 `lifecycle: { kind: 'caller', attach, requestExit }`。`attach` 会在 profile boot 可能让出执行权前收到带时间上界的关停，profile 内的 `appExit` 则会调用 `requestExit`。调用方持有的关停绝不会改变进程退出状态；启动期间的关停请求会等待 profile Context 发布后再释放它，资源释放失败或超时会向调用方 reject，把退出、失败或安装器交接的最终动作留给嵌入方。随附的嵌入方是[桌面应用](../desktop/README.md)。

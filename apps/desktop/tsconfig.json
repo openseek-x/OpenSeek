@@ -20,6 +20,7 @@
     { "path": "../../packages/bundle/web-app" },
     { "path": "../../packages/core/system-prompt" },
     { "path": "../../packages/runtime-diagnostics/invariants" },
+    { "path": "../../packages/settings/settings" },
     { "path": "../../packages/util/home-paths" },
     { "path": "../../packages/util/launch-environment" }
   ]

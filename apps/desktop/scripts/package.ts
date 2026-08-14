@@ -5,6 +5,7 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -15,7 +16,7 @@ import {
 } from 'node:fs'
 import { cp } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { arch } from 'node:os'
+import { arch, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { packager } from '@electron/packager'
@@ -32,6 +33,23 @@ const desktopManifest = JSON.parse(
 const supportedPlatforms = ['darwin', 'win32', 'linux'] as const
 type DesktopPlatform = typeof supportedPlatforms[number]
 type DesktopArch = 'x64' | 'arm64'
+
+interface UpdateRepository {
+  owner: string
+  repository: string
+}
+
+interface DesktopUpdateRuntimeConfig extends UpdateRepository {
+  version: 1
+  enabled: boolean
+  channel: string
+  startupDelayMs: number
+  intervalMs: number
+  noticeDurationMs: number
+  installHandoffTimeoutMs: number
+}
+
+const SAFE_REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/
 
 function assertOwnedOutput(path: string): void {
   const pathFromRoot = relative(repositoryRoot, path)
@@ -67,13 +85,73 @@ function resolveArch(value: string): DesktopArch {
   throw new Error(`package-desktop: unsupported host architecture ${value}`)
 }
 
-function run(command: string, args: string[]): void {
+function resolveBooleanEnvironment(name: string, fallback: boolean): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === '') return fallback
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error(`package-desktop: ${name} must be true or false`)
+}
+
+function resolveIntegerEnvironment(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = process.env[name]
+  if (value === undefined || value === '') return fallback
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`package-desktop: ${name} must be an integer from ${String(minimum)} to ${String(maximum)}`)
+  }
+  return parsed
+}
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]
+  if (value === undefined || value === '') {
+    throw new Error(`package-desktop: ${name} is required for an updater-enabled release`)
+  }
+  return value
+}
+
+function isSafeToken(value: string, maximum: number): boolean {
+  return value.length > 0
+    && value.length <= maximum
+    && value !== '.'
+    && value !== '..'
+    && SAFE_REPOSITORY_SEGMENT.test(value)
+}
+
+function resolveUpdateRepository(): UpdateRepository {
+  const slug = process.env.DESKTOP_UPDATE_REPOSITORY
+    ?? process.env.GITHUB_REPOSITORY
+    ?? 'openseek-x/OpenSeek'
+  const [owner, repository, extra] = slug.split('/')
+  if (owner === undefined
+    || repository === undefined
+    || extra !== undefined
+    || !isSafeToken(owner, 100)
+    || !isSafeToken(repository, 100)) {
+    throw new Error('package-desktop: DESKTOP_UPDATE_REPOSITORY must be owner/repository')
+  }
+  return { owner, repository }
+}
+
+function run(
+  command: string,
+  args: string[],
+  environment: NodeJS.ProcessEnv = {},
+): void {
   const result = spawnSync(command, args, {
     cwd: repositoryRoot,
     env: {
       ...process.env,
+      ...environment,
       CI: 'true',
-      // Release artifacts intentionally carry no developer certificate.
+      // Packager owns application signing. Builder consumes that prepackaged
+      // application and only signs the Windows installer through CSC_LINK.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false',
     },
     stdio: 'inherit',
@@ -114,21 +192,31 @@ function writeShellLauncher(path: string, commands: string[]): void {
   chmodSync(path, 0o755)
 }
 
-/** Add the self-contained dsh companion and its private runtime shims. */
-function writeCompanionCli(platform: DesktopPlatform, appPath: string): string {
+/** Return the public companion launcher path for one packaged application. */
+function resolveCompanionCli(platform: DesktopPlatform, appPath: string): string {
+  if (platform === 'darwin') return join(appPath, 'Contents', 'MacOS', 'dsh')
+  return join(appPath, platform === 'win32' ? 'dsh.cmd' : 'dsh')
+}
+
+/** Add the self-contained dsh companion and its private runtime shims before application signing. */
+function writeCompanionCli(platform: DesktopPlatform, appPath: string): void {
+  // macOS exposes the temporary directory through both /var and /private/var.
+  // Normalize the whole application root before deriving relative paths so a
+  // resolved dependency cannot bake that alias transition into a launcher.
+  const resolvedAppPath = realpathSync(appPath)
   const cliEntry = platform === 'darwin'
-    ? join(appPath, 'Contents', 'Resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-    : join(appPath, 'resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    ? join(resolvedAppPath, 'Contents', 'Resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    : join(resolvedAppPath, 'resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!existsSync(cliEntry)) throw new Error(`package-desktop: missing deployed dsh CLI entry: ${cliEntry}`)
   const pnpmEntry = join(dirname(createRequire(realpathSync(cliEntry)).resolve('pnpm')), 'bin', 'pnpm.mjs')
   if (!existsSync(pnpmEntry)) throw new Error(`package-desktop: missing deployed pnpm entry: ${pnpmEntry}`)
 
   const executable = platform === 'darwin'
-    ? join(appPath, 'Contents', 'MacOS', 'DeepSeek Harness')
-    : join(appPath, platform === 'win32' ? 'DeepSeek Harness.exe' : 'deepseek-harness')
+    ? join(resolvedAppPath, 'Contents', 'MacOS', 'DeepSeek Harness')
+    : join(resolvedAppPath, platform === 'win32' ? 'DeepSeek Harness.exe' : 'deepseek-harness')
   const runtimeDirectory = platform === 'darwin'
-    ? join(appPath, 'Contents', 'Resources', 'dsh-bin')
-    : join(appPath, 'resources', 'dsh-bin')
+    ? join(resolvedAppPath, 'Contents', 'Resources', 'dsh-bin')
+    : join(resolvedAppPath, 'resources', 'dsh-bin')
   mkdirSync(runtimeDirectory, { recursive: true })
 
   if (platform === 'win32') {
@@ -148,8 +236,7 @@ function writeCompanionCli(platform: DesktopPlatform, appPath: string): string {
       'exit /b %ERRORLEVEL%',
       '',
     ].join('\r\n'))
-    const launcher = join(appPath, 'dsh.cmd')
-    writeFileSync(launcher, [
+    writeFileSync(resolveCompanionCli(platform, resolvedAppPath), [
       '@echo off',
       'setlocal',
       'set "ELECTRON_RUN_AS_NODE=1"',
@@ -158,12 +245,10 @@ function writeCompanionCli(platform: DesktopPlatform, appPath: string): string {
       'exit /b %ERRORLEVEL%',
       '',
     ].join('\r\n'))
-    return launcher
+    return
   }
 
-  const launcher = platform === 'darwin'
-    ? join(appPath, 'Contents', 'MacOS', 'dsh')
-    : join(appPath, 'dsh')
+  const launcher = resolveCompanionCli(platform, resolvedAppPath)
   writeShellLauncher(join(runtimeDirectory, 'node'), [
     'export ELECTRON_RUN_AS_NODE=1',
     `exec "$launcher_dir/${relative(runtimeDirectory, executable)}" "$@"`,
@@ -181,11 +266,74 @@ function writeCompanionCli(platform: DesktopPlatform, appPath: string): string {
     `exec "$launcher_dir/${relative(dirname(launcher), executable)}" `
       + `"$launcher_dir/${relative(dirname(launcher), cliEntry)}" "$@"`,
   ])
-  return launcher
 }
 
 const targetPlatform = resolvePlatform(process.platform)
 const targetArch = resolveArch(arch())
+const updateRepository = resolveUpdateRepository()
+const updateChannel = targetPlatform === 'darwin' ? `latest-${targetArch}` : 'latest'
+const releaseBuild = resolveBooleanEnvironment('DESKTOP_RELEASE_BUILD', false)
+const updatesRequested = resolveBooleanEnvironment('DESKTOP_UPDATES_ENABLED', false)
+if (targetPlatform === 'linux' && updatesRequested) {
+  throw new Error('package-desktop: Linux only supports release-page downloads')
+}
+const updatesEnabled = targetPlatform !== 'linux' && updatesRequested
+if (releaseBuild
+  && targetPlatform !== 'linux'
+  && !updatesEnabled) {
+  throw new Error('package-desktop: release macOS and Windows packages must enable updates')
+}
+
+const updateRuntimeConfig: DesktopUpdateRuntimeConfig = {
+  version: 1,
+  enabled: updatesEnabled,
+  ...updateRepository,
+  channel: updateChannel,
+  startupDelayMs: resolveIntegerEnvironment(
+    'DESKTOP_UPDATE_STARTUP_DELAY_MS',
+    30_000,
+    1_000,
+    30 * 60 * 1_000,
+  ),
+  intervalMs: resolveIntegerEnvironment(
+    'DESKTOP_UPDATE_INTERVAL_MS',
+    4 * 60 * 60 * 1_000,
+    15 * 60 * 1_000,
+    7 * 24 * 60 * 60 * 1_000,
+  ),
+  noticeDurationMs: resolveIntegerEnvironment(
+    'DESKTOP_UPDATE_NOTICE_DURATION_MS',
+    5_000,
+    1_000,
+    60_000,
+  ),
+  installHandoffTimeoutMs: resolveIntegerEnvironment(
+    'DESKTOP_UPDATE_INSTALL_HANDOFF_TIMEOUT_MS',
+    120_000,
+    10_000,
+    10 * 60 * 1_000,
+  ),
+}
+
+const macSigning = targetPlatform === 'darwin' && updatesEnabled
+  ? {
+    identity: requiredEnvironment('DESKTOP_MAC_SIGN_IDENTITY'),
+    appleId: requiredEnvironment('APPLE_ID'),
+    appleIdPassword: requiredEnvironment('APPLE_APP_SPECIFIC_PASSWORD'),
+    teamId: requiredEnvironment('APPLE_TEAM_ID'),
+  }
+  : undefined
+const windowsSigning = targetPlatform === 'win32' && updatesEnabled
+  ? {
+    certificateFile: requiredEnvironment('WINDOWS_CERTIFICATE_FILE'),
+    certificatePassword: requiredEnvironment('WINDOWS_CERTIFICATE_PASSWORD'),
+    publisherName: requiredEnvironment('DESKTOP_WINDOWS_PUBLISHER_NAME'),
+  }
+  : undefined
+if (windowsSigning !== undefined && !existsSync(windowsSigning.certificateFile)) {
+  throw new Error(`package-desktop: Windows certificate does not exist: ${windowsSigning.certificateFile}`)
+}
+
 const appName = 'DeepSeek Harness'
 const packagerName = targetPlatform === 'linux' ? 'DeepSeek-Harness' : appName
 const executableName = targetPlatform === 'linux' ? 'deepseek-harness' : appName
@@ -193,12 +341,31 @@ const platformDirectory = join(outputDirectory, `${packagerName}-${targetPlatfor
 const packagedPath = targetPlatform === 'darwin'
   ? join(platformDirectory, `${appName}.app`)
   : platformDirectory
-
-removeOwnedOutput(stageDirectory)
-removeOwnedOutput(outputDirectory)
-mkdirSync(dirname(stageDirectory), { recursive: true })
+const packagedResourcesDirectory = targetPlatform === 'darwin'
+  ? join(packagedPath, 'Contents/Resources')
+  : join(packagedPath, 'resources')
+const releaseConfigDirectory = mkdtempSync(join(tmpdir(), 'dsh-desktop-update-'))
+const appUpdateConfigPath = join(releaseConfigDirectory, 'app-update.yml')
+const runtimeConfigPath = join(releaseConfigDirectory, 'desktop-update.json')
 
 try {
+  writeFileSync(appUpdateConfigPath, [
+    'provider: github',
+    `owner: ${JSON.stringify(updateRepository.owner)}`,
+    `repo: ${JSON.stringify(updateRepository.repository)}`,
+    `channel: ${JSON.stringify(updateChannel)}`,
+    ...(windowsSigning === undefined
+      ? []
+      : [`publisherName: ${JSON.stringify(windowsSigning.publisherName)}`]),
+    'updaterCacheDirName: deepseek-harness-updater',
+    '',
+  ].join('\n'))
+  writeFileSync(runtimeConfigPath, `${JSON.stringify(updateRuntimeConfig, undefined, 2)}\n`)
+
+  removeOwnedOutput(stageDirectory)
+  removeOwnedOutput(outputDirectory)
+  mkdirSync(dirname(stageDirectory), { recursive: true })
+
   console.log('package-desktop: staging the production workspace')
   runPnpm([
     '--filter', '@deepseek-ai/dsh-desktop',
@@ -247,6 +414,16 @@ try {
     // Keep pnpm's portable relative links intact while copying. The asar stage
     // resolves them inside the already self-contained deployment directory.
     derefSymlinks: false,
+    // These files must be present before Packager signs the application. On
+    // macOS this places them inside the sealed application bundle.
+    extraResource: [appUpdateConfigPath, runtimeConfigPath],
+    // The companion and private shims are also part of the signed application.
+    afterCopyExtraResources: [({ buildPath }) => {
+      writeCompanionCli(
+        targetPlatform,
+        targetPlatform === 'darwin' ? join(buildPath, `${appName}.app`) : buildPath,
+      )
+    }],
     afterCopy: [async ({ buildPath }) => {
       // Node's default recursive copy rewrites relative links to absolute source
       // paths when dereferencing is disabled. Replace just the application copy
@@ -263,48 +440,123 @@ try {
       ? {
         appBundleId: 'ai.deepseek.harness',
         appCategoryType: 'public.app-category.developer-tools',
+        ...(macSigning === undefined
+          ? {}
+          : {
+            osxSign: {
+              identity: macSigning.identity,
+              optionsForFile: () => ({ hardenedRuntime: true }),
+              strictVerify: true,
+              continueOnError: false,
+            },
+            osxNotarize: {
+              appleId: macSigning.appleId,
+              appleIdPassword: macSigning.appleIdPassword,
+              teamId: macSigning.teamId,
+            },
+          }),
       }
       : {}),
+    ...(windowsSigning === undefined
+      ? {}
+      : {
+        windowsSign: {
+          certificateFile: windowsSigning.certificateFile,
+          certificatePassword: windowsSigning.certificatePassword,
+          continueOnError: false,
+        },
+      }),
     appVersion: desktopManifest.version,
     buildVersion: desktopManifest.version,
   })
 } finally {
   removeOwnedOutput(stageDirectory)
+  removePathWithoutFollowingLinks(releaseConfigDirectory)
 }
 
 if (!existsSync(packagedPath)) {
   throw new Error(`package-desktop: packager did not create ${packagedPath}`)
 }
-const companionCli = writeCompanionCli(targetPlatform, packagedPath)
-if (targetPlatform === 'darwin') {
+const companionCli = resolveCompanionCli(targetPlatform, packagedPath)
+if (!existsSync(companionCli)) {
+  throw new Error(`package-desktop: Packager did not inject ${companionCli}`)
+}
+for (const configName of ['app-update.yml', 'desktop-update.json']) {
+  const packagedConfig = join(packagedResourcesDirectory, configName)
+  if (!existsSync(packagedConfig)) {
+    throw new Error(`package-desktop: Packager did not inject ${packagedConfig}`)
+  }
+}
+if (targetPlatform === 'darwin' && macSigning === undefined) {
   console.log('package-desktop: applying a local ad-hoc signature')
   run('codesign', ['--force', '--deep', '--sign', '-', packagedPath])
+}
+if (targetPlatform === 'darwin' && macSigning !== undefined) {
+  run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', packagedPath])
+  run('xcrun', ['stapler', 'validate', packagedPath])
 }
 
 const builderCli = join(desktopDirectory, 'node_modules/electron-builder/cli.js')
 const builderConfig = join(desktopDirectory, 'electron-builder.yml')
 if (!existsSync(builderCli)) throw new Error(`package-desktop: missing electron-builder CLI: ${builderCli}`)
 if (!existsSync(builderConfig)) throw new Error(`package-desktop: missing builder config: ${builderConfig}`)
-const target = targetPlatform === 'darwin' ? 'dmg' : targetPlatform === 'win32' ? 'nsis' : 'tar.gz'
-console.log(`package-desktop: creating ${target} distribution artifact`)
+const targets = targetPlatform === 'darwin'
+  ? ['dmg', 'zip']
+  : targetPlatform === 'win32'
+    ? ['nsis']
+    : ['tar.gz']
+console.log(`package-desktop: creating ${targets.join(' and ')} distribution artifacts`)
 run(process.execPath, [
   builderCli,
   targetPlatform === 'darwin' ? '--mac' : targetPlatform === 'win32' ? '--win' : '--linux',
-  target,
+  ...targets,
   `--${targetArch}`,
   '--prepackaged', packagedPath,
   '--projectDir', desktopDirectory,
   '--config', builderConfig,
   '--publish', 'never',
-])
-
-const artifactSuffix = targetPlatform === 'darwin' ? '.dmg' : targetPlatform === 'win32' ? '.exe' : '.tar.gz'
-const artifacts = readdirSync(installerDirectory, { withFileTypes: true })
-  .filter(entry => entry.isFile() && entry.name.endsWith(artifactSuffix))
-  .map(entry => join(installerDirectory, entry.name))
-if (artifacts.length !== 1) {
-  throw new Error(`package-desktop: expected one ${artifactSuffix} artifact, found ${String(artifacts.length)}`)
+], {
+  DESKTOP_UPDATE_OWNER: updateRepository.owner,
+  DESKTOP_UPDATE_REPOSITORY_NAME: updateRepository.repository,
+  DESKTOP_UPDATE_CHANNEL: updateChannel,
+})
+if (targetPlatform === 'darwin') {
+  for (const file of readdirSync(installerDirectory)) {
+    if (file.endsWith('.dmg.blockmap')) unlinkSync(join(installerDirectory, file))
+  }
 }
+
+const installerFiles = readdirSync(installerDirectory, { withFileTypes: true })
+  .filter(entry => entry.isFile())
+  .map(entry => entry.name)
+
+function requireOneArtifact(description: string, predicate: (file: string) => boolean): string {
+  const matches = installerFiles.filter(predicate)
+  const [artifact, extra] = matches
+  if (artifact === undefined || extra !== undefined) {
+    throw new Error(`package-desktop: expected one ${description}, found ${String(matches.length)}`)
+  }
+  return join(installerDirectory, artifact)
+}
+
+const artifacts = targetPlatform === 'darwin'
+  ? [
+    requireOneArtifact('DMG artifact', file => file.endsWith('.dmg')),
+    requireOneArtifact('ZIP artifact', file => file.endsWith('.zip')),
+    requireOneArtifact('ZIP blockmap', file => file.endsWith('.zip.blockmap')),
+    requireOneArtifact(
+      `${updateChannel}-mac.yml update metadata`,
+      file => file === `${updateChannel}-mac.yml`,
+    ),
+  ]
+  : targetPlatform === 'win32'
+    ? [
+      requireOneArtifact('NSIS artifact', file => file.endsWith('.exe')),
+      requireOneArtifact('NSIS blockmap', file => file.endsWith('.exe.blockmap')),
+      requireOneArtifact('latest.yml update metadata', file => file === 'latest.yml'),
+    ]
+    : [requireOneArtifact('tar.gz artifact', file => file.endsWith('.tar.gz'))]
+
 console.log(`package-desktop: wrote ${packagedPath}`)
 console.log(`package-desktop: wrote ${companionCli}`)
-console.log(`package-desktop: wrote ${artifacts[0]}`)
+for (const artifact of artifacts) console.log(`package-desktop: wrote ${artifact}`)
