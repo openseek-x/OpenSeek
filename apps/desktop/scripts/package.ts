@@ -18,10 +18,10 @@ import { createRequire } from 'node:module'
 import { arch } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { packager } from '../apps/desktop/node_modules/@electron/packager/dist/index.js'
+import { packager } from '@electron/packager'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
-const repositoryRoot = realpathSync(resolve(scriptDirectory, '..'))
+const repositoryRoot = realpathSync(resolve(scriptDirectory, '../../..'))
 const stageDirectory = resolve(repositoryRoot, 'apps/desktop/.stage')
 const outputDirectory = resolve(repositoryRoot, 'dist-desktop')
 const installerDirectory = join(outputDirectory, 'installers')
