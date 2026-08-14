@@ -26,6 +26,18 @@ pnpm run test:desktop:packaged
 
 A terminal launch keeps the terminal's current directory as the initial workspace. A Finder launch whose inherited working directory is `/` starts in the user's Documents directory; selecting another workspace in the application changes the active workspace in the normal way.
 
+## Companion CLI
+
+Every packaged application contains a version-matched `dsh` companion: `DeepSeek Harness.app/Contents/MacOS/dsh` on macOS, `dsh.cmd` beside the installed application on Windows, and `dsh` beside `deepseek-harness` in the Linux archive. The companion runs the shipped CLI with Electron's embedded Node runtime, and `dsh plugin` runs the CLI's pinned pnpm through that same executable. Private `node` and `pnpm` shims are visible only to the companion process tree, including package lifecycle scripts. A desktop-only installation therefore needs neither system Node.js nor pnpm to manage profile bundles.
+
+The distribution does not modify the user's `PATH`. Invoke the companion by its installed path or create a shell link in a directory already on `PATH`; the macOS default-location form is:
+
+```sh
+"/Applications/DeepSeek Harness.app/Contents/MacOS/dsh" plugin --profile web add package-name
+```
+
+The companion and desktop application share `$DSH_HOME` and the `web` profile. Quit the application before adding, updating, or removing a bundle, then reopen it so the new profile composition takes effect. Package lifecycle scripts run with the user's host authority, outside the agent sandbox; only install trusted packages, as described in the [plugin packaging guide](../../docs/user/develop/basic/publish.md#installing-from-github-the-build-script-catch). The distribution decision and rejected automatic-`PATH` alternatives are recorded in the [companion CLI Agent Note](../../.agents/notes/implemented/feature/2026-08-14-desktop-companion-cli.md).
+
 ## Profiles, settings, and models
 
 The desktop application shares the `web` profile and Harness home (`$DSH_HOME`, otherwise `~/.dsh`) with `dsh web`. Profile and home `cordis.patch.yml` files are composed at startup, but their file watchers are disabled because Electron does not expose the Node loader hook used by config HMR; restart the application after changing either patch file. The settings and credentials services remain part of the composition, so changes made through Settings, including model-provider changes, continue to apply through their own live services.

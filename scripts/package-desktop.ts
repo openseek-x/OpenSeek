@@ -2,6 +2,7 @@
 
 import { spawnSync } from 'node:child_process'
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -10,8 +11,10 @@ import {
   realpathSync,
   rmSync,
   unlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { cp } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { arch } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -88,6 +91,97 @@ function runPnpm(args: string[]): void {
   }
   // Windows cannot spawn pnpm.cmd directly; the JavaScript entrypoint keeps every host shell-free.
   run(process.execPath, [entrypoint, ...args])
+}
+
+/** Resolve a POSIX launcher's own directory, including when invoked through a symbolic link. */
+function resolveShellLauncherDirectory(): string[] {
+  return [
+    'launcher_path=$0',
+    'case "$launcher_path" in */*) ;; *) launcher_path=$(command -v "$launcher_path") ;; esac',
+    'while [ -L "$launcher_path" ]; do',
+    '  link=$(/usr/bin/readlink "$launcher_path")',
+    '  case "$link" in /*) launcher_path=$link ;; *) launcher_path=${launcher_path%/*}/$link ;; esac',
+    'done',
+    'launcher_dir=${launcher_path%/*}',
+    '[ "$launcher_dir" != "$launcher_path" ] || launcher_dir=.',
+    'launcher_dir=$(CDPATH= cd -- "$launcher_dir" && pwd)',
+  ]
+}
+
+/** Write an executable POSIX shell launcher. */
+function writeShellLauncher(path: string, commands: string[]): void {
+  writeFileSync(path, ['#!/bin/sh', 'set -eu', ...resolveShellLauncherDirectory(), ...commands, ''].join('\n'))
+  chmodSync(path, 0o755)
+}
+
+/** Add the self-contained dsh companion and its private runtime shims. */
+function writeCompanionCli(platform: DesktopPlatform, appPath: string): string {
+  const cliEntry = platform === 'darwin'
+    ? join(appPath, 'Contents', 'Resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    : join(appPath, 'resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  if (!existsSync(cliEntry)) throw new Error(`package-desktop: missing deployed dsh CLI entry: ${cliEntry}`)
+  const pnpmEntry = join(dirname(createRequire(realpathSync(cliEntry)).resolve('pnpm')), 'bin', 'pnpm.mjs')
+  if (!existsSync(pnpmEntry)) throw new Error(`package-desktop: missing deployed pnpm entry: ${pnpmEntry}`)
+
+  const executable = platform === 'darwin'
+    ? join(appPath, 'Contents', 'MacOS', 'DeepSeek Harness')
+    : join(appPath, platform === 'win32' ? 'DeepSeek Harness.exe' : 'deepseek-harness')
+  const runtimeDirectory = platform === 'darwin'
+    ? join(appPath, 'Contents', 'Resources', 'dsh-bin')
+    : join(appPath, 'resources', 'dsh-bin')
+  mkdirSync(runtimeDirectory, { recursive: true })
+
+  if (platform === 'win32') {
+    writeFileSync(join(runtimeDirectory, 'node.cmd'), [
+      '@echo off',
+      'setlocal',
+      'set "ELECTRON_RUN_AS_NODE=1"',
+      `"%~dp0${relative(runtimeDirectory, executable)}" %*`,
+      'exit /b %ERRORLEVEL%',
+      '',
+    ].join('\r\n'))
+    writeFileSync(join(runtimeDirectory, 'pnpm.cmd'), [
+      '@echo off',
+      'setlocal',
+      'set "ELECTRON_RUN_AS_NODE=1"',
+      `"%~dp0${relative(runtimeDirectory, executable)}" "%~dp0${relative(runtimeDirectory, pnpmEntry)}" %*`,
+      'exit /b %ERRORLEVEL%',
+      '',
+    ].join('\r\n'))
+    const launcher = join(appPath, 'dsh.cmd')
+    writeFileSync(launcher, [
+      '@echo off',
+      'setlocal',
+      'set "ELECTRON_RUN_AS_NODE=1"',
+      'set "PATH=%~dp0resources\\dsh-bin;%PATH%"',
+      '"%~dp0DeepSeek Harness.exe" "%~dp0resources\\app\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js" %*',
+      'exit /b %ERRORLEVEL%',
+      '',
+    ].join('\r\n'))
+    return launcher
+  }
+
+  const launcher = platform === 'darwin'
+    ? join(appPath, 'Contents', 'MacOS', 'dsh')
+    : join(appPath, 'dsh')
+  writeShellLauncher(join(runtimeDirectory, 'node'), [
+    'export ELECTRON_RUN_AS_NODE=1',
+    `exec "$launcher_dir/${relative(runtimeDirectory, executable)}" "$@"`,
+  ])
+  writeShellLauncher(join(runtimeDirectory, 'pnpm'), [
+    'export ELECTRON_RUN_AS_NODE=1',
+    `exec "$launcher_dir/${relative(runtimeDirectory, executable)}" `
+      + `"$launcher_dir/${relative(runtimeDirectory, pnpmEntry)}" "$@"`,
+  ])
+  writeShellLauncher(launcher, [
+    `runtime_dir="$launcher_dir/${relative(dirname(launcher), runtimeDirectory)}"`,
+    'PATH="$runtime_dir${PATH:+:$PATH}"',
+    'ELECTRON_RUN_AS_NODE=1',
+    'export ELECTRON_RUN_AS_NODE PATH',
+    `exec "$launcher_dir/${relative(dirname(launcher), executable)}" `
+      + `"$launcher_dir/${relative(dirname(launcher), cliEntry)}" "$@"`,
+  ])
+  return launcher
 }
 
 const targetPlatform = resolvePlatform(process.platform)
@@ -181,6 +275,7 @@ try {
 if (!existsSync(packagedPath)) {
   throw new Error(`package-desktop: packager did not create ${packagedPath}`)
 }
+const companionCli = writeCompanionCli(targetPlatform, packagedPath)
 if (targetPlatform === 'darwin') {
   console.log('package-desktop: applying a local ad-hoc signature')
   run('codesign', ['--force', '--deep', '--sign', '-', packagedPath])
@@ -211,4 +306,5 @@ if (artifacts.length !== 1) {
   throw new Error(`package-desktop: expected one ${artifactSuffix} artifact, found ${String(artifacts.length)}`)
 }
 console.log(`package-desktop: wrote ${packagedPath}`)
+console.log(`package-desktop: wrote ${companionCli}`)
 console.log(`package-desktop: wrote ${artifacts[0]}`)

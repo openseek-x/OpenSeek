@@ -641,7 +641,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         timeout: 60_000,
         killSignal: 'SIGKILL',
         reject: false,
-        env: { DSH_HOME: home },
+        env: { DSH_HOME: home, PATH: '' },
       })
       expect(result.exitCode).toBe(0)
       const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'anchor', 'package.json'), 'utf8')) as {
