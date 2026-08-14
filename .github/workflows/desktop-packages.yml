@@ -1,37 +1,10 @@
 name: Desktop packages
+run-name: Desktop packages · ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
-    tags: ['v*', 'dsh-v*']
-    paths:
-      - .github/workflows/desktop-packages.yml
-      - apps/desktop/**
-      - apps/web/**
-      - packages/**
-      - vendor/**
-      - scripts/package-desktop.ts
-      - scripts/smoke-desktop.ts
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - tsconfig*.json
-      - tsdown.config.ts
-  pull_request:
-    paths:
-      - .github/workflows/desktop-packages.yml
-      - apps/desktop/**
-      - apps/web/**
-      - packages/**
-      - vendor/**
-      - scripts/package-desktop.ts
-      - scripts/smoke-desktop.ts
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - tsconfig*.json
-      - tsdown.config.ts
+    tags: ['dsh-v*']
 
 permissions:
   contents: read
