@@ -70,6 +70,12 @@ jobs:
       - name: Verify runner architecture
         run: node -e "if (process.arch !== '${{ matrix.arch }}') throw new Error('expected ${{ matrix.arch }}, got ' + process.arch)"
 
+      - name: Verify release tag
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node -e "const { version } = require('./apps/desktop/package.json'); const expected = 'dsh-v' + version; if (process.env.RELEASE_TAG !== expected) throw new Error('expected tag ' + expected + ', got ' + process.env.RELEASE_TAG)"
+
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
@@ -102,3 +108,53 @@ jobs:
           path: ${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: DeepSeek-Harness-*
+          path: dist-desktop/release
+          merge-multiple: true
+
+      - name: Verify release assets and record checksums
+        working-directory: dist-desktop/release
+        run: |
+          set -euo pipefail
+          [ "$(find . -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 2 ]
+          [ "$(find . -maxdepth 1 -type f -name '*.exe' | wc -l)" -eq 1 ]
+          [ "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1 ]
+          [ "$(find . -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 0 ]
+          sha256sum *.dmg *.exe *.tar.gz | sort -k2 > SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          release_state="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [ "$release_state" = false ]; then
+            echo "GitHub Release $RELEASE_TAG already exists."
+            exit 0
+          fi
+          if [ "$release_state" = true ]; then
+            echo "::error::Draft GitHub Release $RELEASE_TAG already exists; remove or publish it before retrying."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            dist-desktop/release/*.dmg \
+            dist-desktop/release/*.exe \
+            dist-desktop/release/*.tar.gz \
+            dist-desktop/release/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "DeepSeek Harness ${RELEASE_TAG#dsh-v}"
