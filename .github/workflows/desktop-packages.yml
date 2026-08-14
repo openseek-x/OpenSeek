@@ -1,0 +1,125 @@
+name: Desktop packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*', 'dsh-v*']
+    paths:
+      - .github/workflows/desktop-packages.yml
+      - apps/desktop/**
+      - apps/web/**
+      - packages/**
+      - vendor/**
+      - scripts/package-desktop.ts
+      - scripts/smoke-desktop.ts
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig*.json
+      - tsdown.config.ts
+  pull_request:
+    paths:
+      - .github/workflows/desktop-packages.yml
+      - apps/desktop/**
+      - apps/web/**
+      - packages/**
+      - vendor/**
+      - scripts/package-desktop.ts
+      - scripts/smoke-desktop.ts
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig*.json
+      - tsdown.config.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64 DMG
+            runner: macos-15
+            platform: macos-arm64
+            arch: arm64
+            artifact: dist-desktop/installers/*.dmg
+          - name: macOS x64 DMG
+            runner: macos-15-intel
+            platform: macos-x64
+            arch: x64
+            artifact: dist-desktop/installers/*.dmg
+          - name: Windows x64 EXE
+            runner: windows-2025
+            platform: windows-x64
+            arch: x64
+            artifact: dist-desktop/installers/*.exe
+          - name: Linux x64 tar.gz
+            runner: ubuntu-24.04
+            platform: linux-x64
+            arch: x64
+            artifact: dist-desktop/installers/*.tar.gz
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Enable Windows symlink support
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Verify runner architecture
+        run: node -e "if (process.arch !== '${{ matrix.arch }}') throw new Error('expected ${{ matrix.arch }}, got ' + process.arch)"
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Linux display server
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq xvfb
+
+      - name: Build package
+        run: pnpm run package:desktop
+
+      - name: Smoke-test packaged app
+        if: runner.os != 'Linux'
+        run: pnpm run test:desktop:packaged
+
+      - name: Smoke-test packaged app under Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm run test:desktop:packaged
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-${{ matrix.platform }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14

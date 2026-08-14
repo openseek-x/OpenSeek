@@ -12,11 +12,17 @@ From the repository root:
 
 ```sh
 pnpm run desktop
-pnpm run package:desktop:mac
+pnpm run package:desktop
 pnpm run test:desktop:packaged
 ```
 
-`desktop` builds the repository and starts Electron from source. `package:desktop:mac` creates a self-contained application for the current Mac architecture at `dist-desktop/DeepSeek Harness-darwin-<arch>/DeepSeek Harness.app`; `test:desktop:packaged` starts that application, waits for the composed interface through a random loopback Chromium debugging port, and verifies clean signal shutdown.
+`desktop` builds the repository and starts Electron from source. `package:desktop` builds the current host and architecture, assembles a self-contained application under `dist-desktop/DeepSeek Harness-<platform>-<arch>/`, and emits one distribution artifact:
+
+- macOS: `dist-desktop/installers/DeepSeek-Harness-<version>-mac-<arch>.dmg`
+- Windows: `dist-desktop/installers/DeepSeek-Harness-<version>-win-<arch>.exe`
+- Linux: `dist-desktop/installers/DeepSeek-Harness-<version>-linux-<arch>.tar.gz`
+
+`test:desktop:packaged` starts the assembled application, waits for the composed interface through a random loopback Chromium debugging port, and checks its visible content. [Desktop packages](../../.github/workflows/desktop-packages.yml) runs the native build and smoke test for macOS arm64 and x64, Windows x64, and Linux x64, then uploads each installer or archive as a workflow artifact.
 
 A terminal launch keeps the terminal's current directory as the initial workspace. A Finder launch whose inherited working directory is `/` starts in the user's Documents directory; selecting another workspace in the application changes the active workspace in the normal way.
 
@@ -42,8 +48,8 @@ None. Desktop transport does not alter provider requests or their stable prefixe
 
 ## Known Limitations and Deferred Work
 
-- **Packaging is macOS-only and host-architecture-only** — the current command emits either `darwin-arm64` or `darwin-x64`; Windows, Linux, and universal macOS artifacts are not assembled.
-- **The development artifact is unsigned and unnotarized** — it also uses Electron's default application icon. Distribution outside the build machine needs signing, notarization, release metadata, and branded icon assets.
+- **Local packaging is host-native** — one invocation builds only the current operating system and architecture. CI supplies both Mac architectures plus Windows x64 and Linux x64; it does not produce a universal macOS application.
+- **Distribution uses no release certificate** — macOS applications receive only an ad-hoc signature and are not notarized; Windows installers have no Authenticode signature. The branded icons are included, but Gatekeeper or SmartScreen may warn recipients until signed release channels are added.
 - **The production workspace stays unpacked** — pnpm's relative workspace links cross virtual-store package directories, so ASAR packaging is disabled. The resulting application is substantially larger than a bundled release artifact.
 - **Profile patch HMR is disabled** — edits to the profile or home `cordis.patch.yml` require an application restart; settings edited through the product remain live.
 - **Unary IPC responses are buffered** — request bodies retain the Connection carrier's 160 MiB maximum and non-streaming responses are materialized before returning to the renderer. Only the two long-lived event channels and native Session-log saves stream.

@@ -18,7 +18,7 @@ Status: implemented
 
 Electron 持有 signal 与窗口关闭生命周期。因此，共享 profile boot 公开 signal 接管与 profile patch 文件监视的关闭选项。设置服务仍然实时生效，但由于 Electron 不公开配置 HMR 路径所需的 Node 内部 ESM loader，profile 与 home patch 文件在每次桌面启动时只读取一次。当该内部 loader 缺失时，app-boot Include 通过 `createRequire(bareModuleBaseUrl)` 解析已安装裸包。
 
-macOS 打包器会部署带生产依赖的桌面 workspace，修复已批准的本地 subprocess helper，并把 pnpm 相对符号链接图原样复制进非打包应用目录。桌面 manifest 会显式闭合必需的 workspace peer dependency，因为可移植 pnpm deployment 不会自动物化每个 injected 包的完整 peer 闭包。工件面向构建 Mac 的当前架构，目前未签名、未 notarize。
+宿主原生打包器会部署带生产依赖的桌面 workspace，修复已批准的本地 subprocess helper，并把 pnpm 相对符号链接图原样复制进非打包应用目录。桌面 manifest 会显式闭合必需的 workspace peer dependency，因为可移植 pnpm deployment 不会自动物化每个 injected 包的完整 peer 闭包。Electron Builder 使用该预打包目录，在 macOS 上生成 DMG，在 Windows 上生成 NSIS `.exe` 安装程序，在 Linux 上生成 `.tar.gz` 压缩包。GitHub Actions 矩阵会在原生 runner 上构建两个 Mac 架构以及 Windows x64 和 Linux x64。分发刻意不使用发布证书：Mac 应用只有未 notarize 的 ad-hoc 签名，Windows 安装程序未签名，各平台均使用品牌图标资源。
 
 ## Security properties
 
@@ -26,7 +26,7 @@ macOS 打包器会部署带生产依赖的桌面 workspace，修复已批准的�
 
 ## Verification
 
-Connection、模块注册表、loader fallback 与 Session 日志控制器测试覆盖新的选择、序列化、流、取消、可选 Web 服务器、解析和原生保存路径。无密钥的组装 Web replay 继续覆盖被复用的 UI 组合。`scripts/smoke-desktop.ts` 会启动打包后的应用，通过随机 loopback Chromium 调试 endpoint 等待完全组合的 `dsh://app/` renderer，检查可见内容，发送 `SIGINT`，并要求应用有界退出。签名、notarization、其他机器上的首次 Gatekeeper 行为与非 macOS 打包仍是具名覆盖缺口。
+Connection、模块注册表、loader fallback 与 Session 日志控制器测试覆盖新的选择、序列化、流、取消、可选 Web 服务器、解析和原生保存路径。无密钥的组装 Web replay 继续覆盖被复用的 UI 组合。打包脚本要求只生成一个带平台预期后缀的分发产物。`scripts/smoke-desktop.ts` 会启动当前平台组装后的应用，通过随机 loopback Chromium 调试 endpoint 等待完全组合的 `dsh://app/` renderer，检查可见内容，并使用有界终止阶梯完成清理。原生工作流 job 会针对四个发布目标重复该构建与冒烟测试。各容器格式的安装与卸载、签名发布行为和接收机器的首次运行警告仍是具名覆盖缺口。
 
 ## Alternatives considered
 
@@ -40,8 +40,10 @@ Connection、模块注册表、loader fallback 与 Session 日志控制器测试
 
 **把部署后的 workspace 打入 ASAR。** Pnpm deployment 使用跨虚拟存储包目录的相对链接。ASAR 会拒绝或破坏这张图，因此在打包流程采用其他依赖布局前，开发工件保持真实目录。
 
+**在一个 runner 上交叉编译全部产物。** 这可以缩短工作流，但部署后的应用包含平台原生依赖，且需要在目标操作系统上实际启动。原生 job 能让依赖选择、可执行文件布局与冒烟测试和交付产物保持一致。
+
 ## Consequences
 
-仓库现在能够生成一款零端口桌面应用，其 UI 与 Host 语义和浏览器产品保持一致。平台专用代码被限制在应用组装、IPC 传输和原生对话框；共享 API、重连行为、设置与模型提供方支持仍各有单一 owner。
+仓库现在能够生成零端口桌面应用及可分享的 `.dmg`、`.exe` 和 `.tar.gz` 产物，其 UI 与 Host 语义和浏览器产品保持一致。平台专用代码被限制在应用组装、IPC 传输、原生对话框和分发元数据；共享 API、重连行为、设置与模型提供方支持仍各有单一 owner。
 
-代价是一份仅支持 macOS、体积较大、未签名的开发工件，且没有品牌图标或 patch 文件 HMR。Unary IPC 传输会在两个进程中占用内存，可移植打包还需要显式 workspace peer 闭包。发行分发需要单独设计签名、notarization、图标、更新与多平台打包，而不能把当前开发工件直接视为生产版本。
+代价是一组体积较大、未签名且可能触发操作系统信任警告的产物，以及彼此独立的原生 CI job 和缺失的 Mac universal 构建。Unary IPC 传输会在两个进程中占用内存，可移植打包仍需要显式 workspace peer 闭包，且 patch 文件 HMR 仍不可用。未来的签名发布通道还需要证书、notarization 与更新策略；当前无证书分发不会隐式提供这些能力。

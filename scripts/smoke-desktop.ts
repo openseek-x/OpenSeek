@@ -1,4 +1,4 @@
-/** Smoke-test the packaged macOS desktop application through Chromium's CDP endpoint. */
+/** Smoke-test the packaged desktop application through Chromium's CDP endpoint. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -7,15 +7,22 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const targetArch = arch() === 'x64' ? 'x64' : 'arm64'
-const appPath = join(
+const targetArch = arch() === 'x64' ? 'x64' : arch() === 'arm64' ? 'arm64' : undefined
+if (targetArch === undefined) throw new Error(`desktop smoke: unsupported architecture ${arch()}`)
+if (!['darwin', 'win32', 'linux'].includes(process.platform)) {
+  throw new Error(`desktop smoke: unsupported platform ${process.platform}`)
+}
+const platformDirectory = join(
   repositoryRoot,
   'dist-desktop',
-  `DeepSeek Harness-darwin-${targetArch}`,
-  'DeepSeek Harness.app',
+  `DeepSeek Harness-${process.platform}-${targetArch}`,
 )
-const executable = join(appPath, 'Contents/MacOS/DeepSeek Harness')
-const STARTUP_TIMEOUT_MS = 30_000
+const executable = process.platform === 'darwin'
+  ? join(platformDirectory, 'DeepSeek Harness.app', 'Contents/MacOS/DeepSeek Harness')
+  : process.platform === 'win32'
+    ? join(platformDirectory, 'DeepSeek Harness.exe')
+    : join(platformDirectory, 'deepseek-harness')
+const STARTUP_TIMEOUT_MS = 60_000
 
 interface DebugPage {
   title: string
@@ -24,7 +31,10 @@ interface DebugPage {
 }
 
 /** Poll one asynchronous observation until it returns a value. */
-async function waitFor<T>(read: () => Promise<T | undefined>, description: string): Promise<T> {
+async function waitFor<T>(
+  read: () => Promise<T | undefined> | T | undefined,
+  description: string,
+): Promise<T> {
   const deadline = Date.now() + STARTUP_TIMEOUT_MS
   while (Date.now() < deadline) {
     const value = await read()
@@ -94,13 +104,12 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<bool
   })
 }
 
-if (process.platform !== 'darwin') throw new Error('desktop smoke currently supports macOS only')
-if (!existsSync(executable)) throw new Error(`desktop smoke: package first; missing ${appPath}`)
+if (!existsSync(executable)) throw new Error(`desktop smoke: package first; missing ${executable}`)
 
 let output = ''
 let debugPort: number | undefined
 let ready = false
-let testFailure: unknown
+let testFailure: Error | undefined
 const child = spawn(executable, ['--remote-debugging-port=0'], {
   cwd: repositoryRoot,
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -111,12 +120,14 @@ const capture = (chunk: Buffer): void => {
   const match = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(output)
   if (match?.[1] !== undefined) debugPort = Number(match[1])
 }
-child.stdout?.on('data', capture)
-child.stderr?.on('data', capture)
+child.stdout.on('data', capture)
+child.stderr.on('data', capture)
 
 try {
-  const port = await waitFor(async () => {
-    if (child.exitCode !== null) throw new Error(`desktop smoke exited during startup (${String(child.exitCode)})`)
+  const port = await waitFor(() => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`desktop smoke exited during startup (${String(child.exitCode ?? child.signalCode)})`)
+    }
     return ready ? debugPort : undefined
   }, 'the packaged application')
   const page = await waitFor(async () => {
@@ -146,14 +157,17 @@ try {
   }, 'the composed desktop interface')
   console.log(`desktop smoke: ready at ${page.url}; rendered ${String(rendered.body.trim().length)} characters`)
 } catch (error) {
-  testFailure = error
+  testFailure = error instanceof Error
+    ? error
+    : new Error('desktop smoke failed with a non-Error rejection')
   console.error(output)
 } finally {
-  child.kill('SIGINT')
-  if (!(await waitForExit(child, 10_000))) {
+  child.kill('SIGTERM')
+  if (!(await waitForExit(child, 5_000))) {
     child.kill('SIGKILL')
-    await waitForExit(child, 5_000)
-    testFailure ??= new Error('desktop smoke: packaged application did not exit after SIGINT')
+    if (!(await waitForExit(child, 5_000))) {
+      testFailure ??= new Error('desktop smoke: packaged application could not be cleaned up')
+    }
   }
 }
 

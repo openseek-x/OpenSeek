@@ -18,7 +18,7 @@ The main process serves the built frontend and client bundle graph from the priv
 
 Electron owns signals and window shutdown. Shared profile boot therefore exposes opt-outs for signal ownership and profile-patch file watching. Settings services remain live, but profile and home patch files are read once per desktop launch because Electron does not expose the Node internal ESM loader needed by the config-HMR path. The app-boot Include resolves installed bare packages through `createRequire(bareModuleBaseUrl)` when that internal loader is absent.
 
-The macOS packager deploys the desktop workspace with production dependencies, repairs the approved local subprocess helper, and copies pnpm's relative symlink graph verbatim into an unpacked application directory. The desktop manifest explicitly closes required workspace-peer dependencies because a portable pnpm deployment does not otherwise materialize every injected package's peer closure. The artifact targets the build Mac's architecture and is currently unsigned and unnotarized.
+The host-native packager deploys the desktop workspace with production dependencies, repairs the approved local subprocess helper, and copies pnpm's relative symlink graph verbatim into an unpacked application directory. The desktop manifest explicitly closes required workspace-peer dependencies because a portable pnpm deployment does not otherwise materialize every injected package's peer closure. Electron Builder consumes that prepackaged directory and emits a DMG on macOS, an NSIS `.exe` installer on Windows, or a `.tar.gz` archive on Linux. The GitHub Actions matrix runs both Mac architectures plus Windows x64 and Linux x64 on native runners. Distribution deliberately uses no release certificate: Mac applications receive an ad-hoc signature without notarization, Windows installers are unsigned, and each platform receives the branded icon assets.
 
 ## Security properties
 
@@ -26,7 +26,7 @@ The desktop origin is isolated from the network: navigation stays on `dsh://app`
 
 ## Verification
 
-Connection, module-registry, loader-fallback, and Session-log controller tests cover the new selection, serialization, streaming, cancellation, optional-Web-server, resolution, and native-save paths. The keyless assembled Web replay continues to cover the reused UI composition. `scripts/smoke-desktop.ts` starts the packaged application, waits for a fully composed `dsh://app/` renderer through a random loopback Chromium debugging endpoint, checks visible content, sends `SIGINT`, and requires bounded exit. Signing, notarization, first-run Gatekeeper behavior on another machine, and non-macOS packaging remain named coverage gaps.
+Connection, module-registry, loader-fallback, and Session-log controller tests cover the new selection, serialization, streaming, cancellation, optional-Web-server, resolution, and native-save paths. The keyless assembled Web replay continues to cover the reused UI composition. The package script requires exactly one distribution artifact with the platform's expected suffix. `scripts/smoke-desktop.ts` starts the current platform's assembled application, waits for a fully composed `dsh://app/` renderer through a random loopback Chromium debugging endpoint, checks visible content, and applies a bounded termination ladder for cleanup. Native workflow jobs repeat that build and smoke test for the four release targets. Installing or uninstalling each container format, signed-release behavior, and recipient-machine first-run warnings remain named coverage gaps.
 
 ## Alternatives considered
 
@@ -40,8 +40,10 @@ Connection, module-registry, loader-fallback, and Session-log controller tests c
 
 **Bundle the deployed workspace into ASAR.** The pnpm deployment uses relative links across virtual-store package directories. ASAR rejects or breaks that graph, so the development artifact keeps a real directory until packaging introduces a different dependency layout.
 
+**Cross-compile every artifact on one runner.** This would shorten the workflow, but the deployed application contains platform-native dependencies and needs to be started on its target operating system. Native jobs keep dependency selection, executable layout, and the smoke test aligned with the delivered artifact.
+
 ## Consequences
 
-The repository now produces a zero-port desktop application whose UI and Host semantics stay aligned with the browser product. Platform-specific code is confined to application assembly, IPC transport, and native dialogs; the shared API, reconnect behavior, settings, and model-provider support remain single-owner.
+The repository now produces zero-port desktop applications and shareable `.dmg`, `.exe`, and `.tar.gz` artifacts whose UI and Host semantics stay aligned with the browser product. Platform-specific code is confined to application assembly, IPC transport, native dialogs, and distribution metadata; the shared API, reconnect behavior, settings, and model-provider support remain single-owner.
 
-The cost is a macOS-only, large, unsigned development artifact with no branded icon or patch-file HMR. Unary IPC transfers use memory in both processes, and portable packaging requires an explicit workspace peer closure. Release distribution needs a deliberate signing, notarization, icon, update, and multi-platform packaging design rather than treating the current developer artifact as production-ready.
+The cost is a set of large, unsigned artifacts that can trigger operating-system trust warnings, plus separate native CI jobs and no universal Mac build. Unary IPC transfers use memory in both processes, portable packaging requires an explicit workspace peer closure, and patch-file HMR remains unavailable. A future signed release channel still needs certificates, notarization, and update policy; those are not silently inferred from the current no-certificate distribution.

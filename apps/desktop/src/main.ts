@@ -342,7 +342,9 @@ function createWindow(): BrowserWindow {
     // Let the renderer reach the top edge on macOS while keeping the native
     // close/minimize/zoom controls. The document title remains available to
     // the app switcher and accessibility APIs without painting a title strip.
-    ...process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {},
+    ...process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const }
+      : { icon: fileURLToPath(new URL('../assets/icon.png', import.meta.url)) },
     width: 1380,
     height: 900,
     minWidth: 920,

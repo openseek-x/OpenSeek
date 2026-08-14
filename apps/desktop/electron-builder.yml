@@ -1,0 +1,37 @@
+appId: ai.deepseek.harness
+productName: DeepSeek Harness
+artifactName: DeepSeek-Harness-${version}-${os}-${arch}.${ext}
+asar: false
+npmRebuild: false
+compression: normal
+
+directories:
+  output: ../../dist-desktop/installers
+
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  identity: null
+  hardenedRuntime: false
+
+dmg:
+  title: DeepSeek Harness ${version}
+
+win:
+  target: nsis
+  icon: assets/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DeepSeek Harness
+
+linux:
+  target: tar.gz
+  category: Development
+  icon: assets/icon.png
+  executableName: deepseek-harness

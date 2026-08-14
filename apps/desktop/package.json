@@ -16,6 +16,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "assets/icon.png",
     "lib/*.js",
     "lib/*.cjs",
     "config"
@@ -58,10 +59,11 @@
     "@deepseek-ai/dsh-timeout": "workspace:^",
     "@deepseek-ai/dsh-web-app": "workspace:^",
     "@deepseek-ai/dsh-web-frontend": "workspace:^",
-    "@deepseek-ai/dsh-workflow": "workspace:^",
-    "electron": "43.4.0"
+    "@deepseek-ai/dsh-workflow": "workspace:^"
   },
   "devDependencies": {
-    "@electron/packager": "20.3.0"
+    "@electron/packager": "20.3.0",
+    "electron-builder": "26.15.7",
+    "electron": "43.4.0"
   }
 }

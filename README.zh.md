@@ -34,14 +34,15 @@ pnpm run build
 pnpm dsh web
 ```
 
-在 macOS 上，同一份源码还提供 Electron 应用：
+在 macOS、Windows 与 Linux 上，同一份源码还提供 Electron 应用：
 
 ```sh
 pnpm run desktop
-pnpm run package:desktop:mac
+pnpm run package:desktop
+pnpm run test:desktop:packaged
 ```
 
-打包命令会生成 `dist-desktop/DeepSeek Harness-darwin-<arch>/DeepSeek Harness.app`。其传输机制、安全姿态、模型提供方支持与当前分发限制见[桌面应用参考](apps/desktop/README.md)。
+打包命令会面向当前宿主与架构构建，在 `dist-desktop/installers/` 下生成 macOS `.dmg`、Windows `.exe` 安装程序或 Linux `.tar.gz` 压缩包。CI 目标、无签名分发行为、传输机制、安全姿态与模型提供方支持见[桌面应用参考](apps/desktop/README.md)。
 
 ## 社区与支持
 

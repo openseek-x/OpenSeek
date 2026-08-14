@@ -12,11 +12,17 @@ DeepSeek Harness 图形客户端的 Electron 应用。主进程在进程内启�
 
 ```sh
 pnpm run desktop
-pnpm run package:desktop:mac
+pnpm run package:desktop
 pnpm run test:desktop:packaged
 ```
 
-`desktop` 会构建仓库并从源码启动 Electron。`package:desktop:mac` 为当前 Mac 架构生成独立应用，路径为 `dist-desktop/DeepSeek Harness-darwin-<arch>/DeepSeek Harness.app`；`test:desktop:packaged` 会启动该应用，通过随机的本机 Chromium 调试端口等待完整界面组合完成，并验证信号退出能够干净结束。
+`desktop` 会构建仓库并从源码启动 Electron。`package:desktop` 面向当前宿主与架构构建，在 `dist-desktop/DeepSeek Harness-<platform>-<arch>/` 下组装独立应用，并生成一个分发产物：
+
+- macOS：`dist-desktop/installers/DeepSeek-Harness-<version>-mac-<arch>.dmg`
+- Windows：`dist-desktop/installers/DeepSeek-Harness-<version>-win-<arch>.exe`
+- Linux：`dist-desktop/installers/DeepSeek-Harness-<version>-linux-<arch>.tar.gz`
+
+`test:desktop:packaged` 会启动组装后的应用，通过随机的本机 Chromium 调试端口等待完整界面组合完成，并检查可见内容。[Desktop packages](../../.github/workflows/desktop-packages.yml) 会针对 macOS arm64 与 x64、Windows x64 和 Linux x64 执行原生构建与冒烟测试，再把各安装程序或压缩包上传为工作流产物。
 
 从终端启动时，终端当前目录是初始 workspace。从 Finder 启动且继承的工作目录为 `/` 时，应用从用户的 Documents 目录开始；在应用内选择其他 workspace 后，会按常规方式切换活动 workspace。
 
@@ -42,8 +48,8 @@ Renderer 以 `sandbox: true`、context isolation、禁用 Node integration、拒
 
 ## 已知限制与暂缓事项
 
-- **打包目前仅支持 macOS 与本机架构**：现有命令只生成 `darwin-arm64` 或 `darwin-x64`；尚未组装 Windows、Linux 或 macOS universal 工件。
-- **开发工件未签名、未 notarize**：它还使用 Electron 默认应用图标。要在构建机器之外分发，需要补充签名、notarization、发布元数据和品牌图标资源。
+- **本地打包仅面向本机**：一次调用只构建当前操作系统与架构。CI 会提供两个 Mac 架构以及 Windows x64 和 Linux x64，但不会生成 macOS universal 应用。
+- **分发不使用发布证书**：macOS 应用只有 ad-hoc 签名且未 notarize；Windows 安装程序没有 Authenticode 签名。产物已包含品牌图标，但在增加已签名发布通道前，接收者仍可能看到 Gatekeeper 或 SmartScreen 警告。
 - **生产 workspace 保持非打包目录**：pnpm 的相对 workspace 链接会跨越虚拟存储中的包目录，因此禁用 ASAR。生成的应用会明显大于完成 bundle 优化的发布工件。
 - **Profile patch HMR 被禁用**：修改 profile 或 home 的 `cordis.patch.yml` 后需要重启应用；通过产品界面编辑的设置仍实时生效。
 - **Unary IPC 响应会缓冲**：请求 body 延用 Connection 载体的 160 MiB 上限，非流式响应会在返回 renderer 前完整物化。只有两条长生命周期事件通道与原生 Session 日志保存使用流式传输。
