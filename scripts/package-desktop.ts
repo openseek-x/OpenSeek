@@ -81,6 +81,15 @@ function run(command: string, args: string[]): void {
   }
 }
 
+function runPnpm(args: string[]): void {
+  const entrypoint = process.env.npm_execpath
+  if (entrypoint === undefined || entrypoint === '') {
+    throw new Error('package-desktop: npm_execpath is unavailable; invoke packaging through a pnpm package script')
+  }
+  // Windows cannot spawn pnpm.cmd directly; the JavaScript entrypoint keeps every host shell-free.
+  run(process.execPath, [entrypoint, ...args])
+}
+
 const targetPlatform = resolvePlatform(process.platform)
 const targetArch = resolveArch(arch())
 const appName = 'DeepSeek Harness'
@@ -96,7 +105,7 @@ mkdirSync(dirname(stageDirectory), { recursive: true })
 
 try {
   console.log('package-desktop: staging the production workspace')
-  run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', [
+  runPnpm([
     '--filter', '@deepseek-ai/dsh-desktop',
     'deploy', '--prod', '--config.inject-workspace-packages=true',
     // The portable deploy rewrites the reviewed workspace postinstall's file:
