@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { arch, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -36,6 +36,8 @@ const companionCli = process.platform === 'darwin'
     ? join(platformDirectory, 'dsh.cmd')
     : join(platformDirectory, 'dsh')
 const STARTUP_TIMEOUT_MS = 60_000
+const WINDOWS_COMPANION_BUNDLE_ENV = 'DSH_DESKTOP_COMPANION_BUNDLE'
+const WINDOWS_COMPANION_EXECUTABLE_ENV = 'DSH_DESKTOP_COMPANION_EXECUTABLE'
 
 interface DebugPage {
   title: string
@@ -129,7 +131,7 @@ try {
     companionCommand = join(linkDirectory, 'dsh')
     symlinkSync(companionCli, companionCommand)
   }
-  const bundle = join(cliHome, 'smoke-bundle')
+  const bundle = resolve(cliHome, 'smoke-bundle')
   mkdirSync(bundle)
   writeFileSync(join(bundle, 'package.json'), `${JSON.stringify({
     name: 'dsh-desktop-smoke-bundle',
@@ -137,7 +139,7 @@ try {
     dsh: { bundle: { patch: './cordis.patch.yml' } },
   }, undefined, 2)}\n`)
   writeFileSync(join(bundle, 'cordis.patch.yml'), '[]\n')
-  const cliEnvironment = {
+  const cliEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     CI: 'true',
     DSH_HOME: cliHome,
@@ -145,12 +147,27 @@ try {
     // not accidentally pass because the build host provides either command.
     PATH: '',
   }
+  let companionExecutable = companionCommand
+  let companionPrefixArgs: string[] = []
+  if (process.platform === 'win32') {
+    const commandProcessor = process.env.ComSpec
+    if (commandProcessor === undefined || commandProcessor.length === 0) {
+      throw new Error('desktop smoke: Windows ComSpec is missing')
+    }
+    if (!isAbsolute(commandProcessor) || basename(commandProcessor).toLowerCase() !== 'cmd.exe') {
+      throw new Error(`desktop smoke: Windows ComSpec must be an absolute cmd.exe path: ${commandProcessor}`)
+    }
+    companionExecutable = commandProcessor
+    companionPrefixArgs = ['/d', '/v:off', '/s', '/c', `%${WINDOWS_COMPANION_EXECUTABLE_ENV}%`]
+    // cmd.exe must expand quoted dynamic paths after parsing its own command line.
+    cliEnvironment[WINDOWS_COMPANION_BUNDLE_ENV] = `"${bundle}"`
+    cliEnvironment[WINDOWS_COMPANION_EXECUTABLE_ENV] = `"${companionCommand}"`
+  }
   const runCompanion = (args: string[]): string => {
-    const result = spawnSync(companionCommand, args, {
+    const result = spawnSync(companionExecutable, [...companionPrefixArgs, ...args], {
       encoding: 'utf8',
       env: cliEnvironment,
       killSignal: 'SIGKILL',
-      shell: process.platform === 'win32',
       timeout: STARTUP_TIMEOUT_MS,
     })
     if (result.error !== undefined) throw result.error
@@ -163,7 +180,8 @@ try {
   }
   const version = runCompanion(['--version'])
   if (version === '') throw new Error('desktop smoke: companion CLI printed no version')
-  runCompanion(['plugin', '--profile', 'desktop-smoke', 'add', bundle])
+  const bundleArgument = process.platform === 'win32' ? `%${WINDOWS_COMPANION_BUNDLE_ENV}%` : bundle
+  runCompanion(['plugin', '--profile', 'desktop-smoke', 'add', bundleArgument])
   const nodeVersion = runCompanion(['plugin', '--profile', 'desktop-smoke', 'exec', 'node', '--version'])
   const pnpmVersion = runCompanion(['plugin', '--profile', 'desktop-smoke', 'exec', 'pnpm', '--version'])
   if (!/^v\d+\./.test(nodeVersion)) throw new Error(`desktop smoke: invalid embedded Node version: ${nodeVersion}`)
