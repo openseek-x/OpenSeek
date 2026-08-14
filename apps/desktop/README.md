@@ -16,7 +16,7 @@ pnpm run package:desktop
 pnpm run test:desktop:packaged
 ```
 
-`desktop` builds the repository and starts Electron from source. `package:desktop` builds the current host and architecture, assembles a self-contained application under `dist-desktop/DeepSeek Harness-<platform>-<arch>/`, and emits one distribution artifact:
+`desktop` builds the repository and starts Electron from source. `package:desktop` builds the current host and architecture, assembles a self-contained application under `dist-desktop/DeepSeek Harness-<platform>-<arch>/` on macOS and Windows or `dist-desktop/DeepSeek-Harness-linux-<arch>/` on Linux, and emits one distribution artifact:
 
 - macOS: `dist-desktop/installers/DeepSeek-Harness-<version>-mac-<arch>.dmg`
 - Windows: `dist-desktop/installers/DeepSeek-Harness-<version>-win-<arch>.exe`

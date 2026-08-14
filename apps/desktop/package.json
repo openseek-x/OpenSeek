@@ -1,6 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Electron desktop application for DeepSeek Harness with an in-process IPC transport",
+  "author": "OpenSeek Contributors",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"

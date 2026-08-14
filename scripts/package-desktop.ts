@@ -93,8 +93,9 @@ function runPnpm(args: string[]): void {
 const targetPlatform = resolvePlatform(process.platform)
 const targetArch = resolveArch(arch())
 const appName = 'DeepSeek Harness'
+const packagerName = targetPlatform === 'linux' ? 'DeepSeek-Harness' : appName
 const executableName = targetPlatform === 'linux' ? 'deepseek-harness' : appName
-const platformDirectory = join(outputDirectory, `${appName}-${targetPlatform}-${targetArch}`)
+const platformDirectory = join(outputDirectory, `${packagerName}-${targetPlatform}-${targetArch}`)
 const packagedPath = targetPlatform === 'darwin'
   ? join(platformDirectory, `${appName}.app`)
   : platformDirectory
@@ -131,7 +132,7 @@ try {
   console.log(`package-desktop: packaging ${appName} for ${targetPlatform}-${targetArch}`)
   await packager({
     dir: stageDirectory,
-    name: appName,
+    name: packagerName,
     executableName,
     ...(icon === undefined ? {} : { icon }),
     platform: targetPlatform,

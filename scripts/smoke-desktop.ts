@@ -15,7 +15,7 @@ if (!['darwin', 'win32', 'linux'].includes(process.platform)) {
 const platformDirectory = join(
   repositoryRoot,
   'dist-desktop',
-  `DeepSeek Harness-${process.platform}-${targetArch}`,
+  `${process.platform === 'linux' ? 'DeepSeek-Harness' : 'DeepSeek Harness'}-${process.platform}-${targetArch}`,
 )
 const executable = process.platform === 'darwin'
   ? join(platformDirectory, 'DeepSeek Harness.app', 'Contents/MacOS/DeepSeek Harness')

@@ -85,8 +85,8 @@ jobs:
       - name: Configure Linux Chromium sandbox helper
         if: runner.os == 'Linux'
         run: |
-          sudo chown root:root "dist-desktop/DeepSeek Harness-linux-${{ matrix.arch }}/chrome-sandbox"
-          sudo chmod 4755 "dist-desktop/DeepSeek Harness-linux-${{ matrix.arch }}/chrome-sandbox"
+          sudo chown root:root "dist-desktop/DeepSeek-Harness-linux-${{ matrix.arch }}/chrome-sandbox"
+          sudo chmod 4755 "dist-desktop/DeepSeek-Harness-linux-${{ matrix.arch }}/chrome-sandbox"
 
       - name: Smoke-test packaged app
         if: runner.os != 'Linux'
