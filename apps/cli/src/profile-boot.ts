@@ -239,6 +239,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })
 
   const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
+  // Bare plugins resolve from the profile's dependencies first, then from
+  // the installation-closure mirror at profiles/node_modules. This explicit
+  // anchor gives Node's internal importer and Electron's public fallback the
+  // same parent-directory search.
+  const bareModuleBaseUrl = pathToFileURL(join(composed.profile.dir, 'package.json')).href
   // Recomposition for the live user layers: bundle layers below, overlays
   // above, so a user edit can never displace them. Parsed app arguments are
   // not in here at all — they live in app-provided services that survive a
@@ -270,7 +275,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  }, pathToFileURL(INSTALL_ANCHOR).href)
+  }, bareModuleBaseUrl)
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader

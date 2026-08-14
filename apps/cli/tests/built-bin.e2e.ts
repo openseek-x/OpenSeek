@@ -99,13 +99,14 @@ function createProfileLifecycleFixture(): ProfileLifecycleFixture {
   writeFileSync(join(bundleDir, 'cordis.patch.yml'), [
     '- insert:',
     '    - id: profile-lifecycle-fixture',
-    `      name: ${pathToFileURL(join(bundleDir, 'plugin.mjs')).href}`,
+    '      name: dsh-lifecycle-bundle',
     '',
   ].join('\n'))
   writeFileSync(join(bundleDir, 'package.json'), JSON.stringify({
     name: 'dsh-lifecycle-bundle',
     version: '0.0.0',
     type: 'module',
+    exports: './plugin.mjs',
     dsh: { bundle: { patch: './cordis.patch.yml' } },
   }, undefined, 2))
   const profileDir = join(home, 'profiles', 'lifecycle')
@@ -116,7 +117,8 @@ function createProfileLifecycleFixture(): ProfileLifecycleFixture {
     dependencies: {},
     dsh: { profile: { bundles: ['dsh-lifecycle-bundle'] } },
   }, undefined, 2))
-  // Hand-place the "installed" bundle where profile resolution finds it.
+  // Hand-place the "installed" bundle where profile resolution and its bare
+  // plugin row find it before the parent installation fallback.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), '[]\n')
   const linkTarget = join(profileDir, 'node_modules', 'dsh-lifecycle-bundle')
   mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
