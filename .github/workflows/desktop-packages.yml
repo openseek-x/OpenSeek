@@ -17,6 +17,10 @@ env:
   PRIMARY_NODE_VERSION: '24'
   DSH_TELEMETRY_DISABLED: '1'
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  # Certificate-free publication is bound to one reviewed tag. Later tags fail
+  # until the mode changes to `signed` or this tag receives separate review.
+  DESKTOP_RELEASE_SIGNING_MODE: 'certificate-free'
+  DESKTOP_CERTIFICATE_FREE_RELEASE_TAG: 'dsh-v0.1.1'
 
 jobs:
   release-context:
@@ -25,19 +29,45 @@ jobs:
     timeout-minutes: 5
     outputs:
       release: ${{ steps.classify.outputs.release }}
+      signing_mode: ${{ steps.classify.outputs.signing_mode }}
     steps:
       - name: Classify trusted tag push
         id: classify
         env:
           RELEASE_BUILD: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'true' || 'false' }}
-        run: echo "release=$RELEASE_BUILD" >> "$GITHUB_OUTPUT"
+          RELEASE_TAG: ${{ github.ref_name }}
+          CONFIGURED_SIGNING_MODE: ${{ env.DESKTOP_RELEASE_SIGNING_MODE }}
+          CERTIFICATE_FREE_RELEASE_TAG: ${{ env.DESKTOP_CERTIFICATE_FREE_RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          signing_mode='certificate-free'
+          if [ "$RELEASE_BUILD" = 'true' ]; then
+            case "$CONFIGURED_SIGNING_MODE" in
+              certificate-free)
+                if [ "$RELEASE_TAG" != "$CERTIFICATE_FREE_RELEASE_TAG" ]; then
+                  echo "::error::Certificate-free mode is limited to $CERTIFICATE_FREE_RELEASE_TAG, got $RELEASE_TAG"
+                  exit 1
+                fi
+                signing_mode='certificate-free'
+                ;;
+              signed)
+                signing_mode='signed'
+                ;;
+              *)
+                echo "::error::Unsupported desktop release signing mode: $CONFIGURED_SIGNING_MODE"
+                exit 1
+                ;;
+            esac
+          fi
+          echo "release=$RELEASE_BUILD" >> "$GITHUB_OUTPUT"
+          echo "signing_mode=$signing_mode" >> "$GITHUB_OUTPUT"
 
   package:
     name: ${{ matrix.name }}
     needs: release-context
     runs-on: ${{ matrix.runner }}
-    # desktop-package is intentionally secret-free; only trusted tag Mac and Windows jobs select desktop-release.
-    environment: ${{ needs.release-context.outputs.release == 'true' && matrix.release_environment || 'desktop-package' }}
+    # desktop-package is intentionally secret-free; only explicit signed-mode jobs select desktop-release.
+    environment: ${{ needs.release-context.outputs.signing_mode == 'signed' && matrix.release_environment || 'desktop-package' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -106,7 +136,7 @@ jobs:
           sudo apt-get install -yq xvfb
 
       - name: Configure macOS release signing
-        if: runner.os == 'macOS' && needs.release-context.outputs.release == 'true'
+        if: runner.os == 'macOS' && needs.release-context.outputs.signing_mode == 'signed'
         shell: bash
         env:
           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
@@ -136,7 +166,7 @@ jobs:
           security find-identity -v -p codesigning "$keychain_path" | grep -F -- "$MACOS_SIGN_IDENTITY"
 
       - name: Configure Windows release signing
-        if: runner.os == 'Windows' && needs.release-context.outputs.release == 'true'
+        if: runner.os == 'Windows' && needs.release-context.outputs.signing_mode == 'signed'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
@@ -172,20 +202,77 @@ jobs:
         run: pnpm run package:desktop
         env:
           DESKTOP_RELEASE_BUILD: ${{ needs.release-context.outputs.release }}
-          DESKTOP_UPDATES_ENABLED: ${{ needs.release-context.outputs.release == 'true' && runner.os != 'Linux' && 'true' || 'false' }}
+          DESKTOP_UPDATES_ENABLED: ${{ (needs.release-context.outputs.release == 'true' || github.event_name == 'workflow_dispatch') && runner.os != 'Linux' && 'true' || 'false' }}
+          DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD: ${{ needs.release-context.outputs.signing_mode == 'certificate-free' && runner.os != 'Linux' && 'true' || 'false' }}
           DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
-          DESKTOP_MAC_SIGN_IDENTITY: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.MACOS_SIGN_IDENTITY || '' }}
-          APPLE_ID: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_ID || '' }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
-          WINDOWS_CERTIFICATE_FILE: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && format('{0}/dsh-code-signing.pfx', runner.temp) || '' }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
-          CSC_LINK: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && format('{0}/dsh-code-signing.pfx', runner.temp) || '' }}
-          CSC_KEY_PASSWORD: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          DESKTOP_MAC_SIGN_IDENTITY: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'macOS' && secrets.MACOS_SIGN_IDENTITY || '' }}
+          APPLE_ID: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          WINDOWS_CERTIFICATE_FILE: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'Windows' && format('{0}/dsh-code-signing.pfx', runner.temp) || '' }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          CSC_LINK: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'Windows' && format('{0}/dsh-code-signing.pfx', runner.temp) || '' }}
+          CSC_KEY_PASSWORD: ${{ needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
 
       - name: Verify updater metadata
         if: runner.os != 'Linux'
         run: pnpm exec tsx scripts/verify-desktop-update-metadata.ts dist-desktop/installers ${{ matrix.platform }}
+
+      - name: Verify certificate-free macOS update release
+        if: runner.os == 'macOS' && needs.release-context.outputs.signing_mode == 'certificate-free'
+        shell: bash
+        run: |
+          set -euo pipefail
+          application="dist-desktop/DeepSeek Harness-darwin-${{ matrix.arch }}/DeepSeek Harness.app"
+          codesign --verify --deep --strict --verbose=2 "$application"
+          codesign -d -r- "$application" 2>&1 |
+            grep -Fx -- 'designated => identifier "ai.deepseek.harness"'
+          codesign -dv --verbose=4 "$application" 2>&1 | grep -Fx -- 'Signature=adhoc'
+          [ -L "$application/Contents/MacOS/dsh" ]
+          [ "$(readlink "$application/Contents/MacOS/dsh")" = '../Resources/bin/dsh' ]
+          UPDATE_CONFIG="$application/Contents/Resources/desktop-update.json" \
+            EXPECTED_CHANNEL="latest-${{ matrix.arch }}" \
+            node -e "const { readFileSync } = require('node:fs'); const config = JSON.parse(readFileSync(process.env.UPDATE_CONFIG, 'utf8')); if (config.enabled !== true || config.channel !== process.env.EXPECTED_CHANNEL) throw new Error('certificate-free macOS updater configuration is not enabled on the expected channel')"
+
+          shopt -s nullglob
+          archives=(dist-desktop/installers/*-mac-${{ matrix.arch }}.zip)
+          [ "${#archives[@]}" -eq 1 ]
+          extraction="$RUNNER_TEMP/dsh-mac-update-seed"
+          mkdir -p "$extraction"
+          ditto -x -k "${archives[0]}" "$extraction"
+          extracted_application="$extraction/DeepSeek Harness.app"
+          codesign --verify --deep --strict --verbose=2 "$extracted_application"
+          codesign -d -r- "$extracted_application" 2>&1 |
+            grep -Fx -- 'designated => identifier "ai.deepseek.harness"'
+          expected_version="$(node -p "require('./apps/desktop/package.json').version")"
+          [ "$("$extracted_application/Contents/MacOS/dsh" --version)" = "$expected_version" ]
+
+      - name: Verify certificate-free Windows update release
+        if: runner.os == 'Windows' && needs.release-context.outputs.signing_mode == 'certificate-free'
+        shell: pwsh
+        run: |
+          $application = 'dist-desktop/DeepSeek Harness-win32-${{ matrix.arch }}/DeepSeek Harness.exe'
+          $installer = Get-ChildItem 'dist-desktop/installers' -Filter '*.exe' -File
+          if ($installer.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($installer.Count)"
+          }
+          foreach ($path in @($application, $installer[0].FullName)) {
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne 'NotSigned') {
+              throw "Expected no Authenticode signature for ${path}, got $($signature.Status)"
+            }
+          }
+
+          $resources = 'dist-desktop/DeepSeek Harness-win32-${{ matrix.arch }}/resources'
+          $appUpdate = Get-Content (Join-Path $resources 'app-update.yml') -Raw
+          if ($appUpdate -match '(?m)^publisherName:') {
+            throw 'Certificate-free app-update.yml must omit publisherName'
+          }
+          $runtimeConfig = Get-Content (Join-Path $resources 'desktop-update.json') -Raw |
+            ConvertFrom-Json
+          if ($runtimeConfig.enabled -ne $true -or $runtimeConfig.channel -ne 'latest') {
+            throw 'Certificate-free Windows updater configuration is not enabled on latest'
+          }
 
       - name: Configure Linux Chromium sandbox helper
         if: runner.os == 'Linux'
@@ -202,7 +289,7 @@ jobs:
         run: xvfb-run -a pnpm run test:desktop:packaged
 
       - name: Verify macOS release signature and notarization
-        if: runner.os == 'macOS' && needs.release-context.outputs.release == 'true'
+        if: runner.os == 'macOS' && needs.release-context.outputs.signing_mode == 'signed'
         shell: bash
         run: |
           set -euo pipefail
@@ -212,7 +299,7 @@ jobs:
           spctl --assess --type execute --verbose=2 "$application"
 
       - name: Verify Windows release signatures
-        if: runner.os == 'Windows' && needs.release-context.outputs.release == 'true'
+        if: runner.os == 'Windows' && needs.release-context.outputs.signing_mode == 'signed'
         shell: pwsh
         run: |
           $application = 'dist-desktop/DeepSeek Harness-win32-${{ matrix.arch }}/DeepSeek Harness.exe'
@@ -228,14 +315,14 @@ jobs:
           }
 
       - name: Remove temporary macOS signing credentials
-        if: always() && needs.release-context.outputs.release == 'true' && runner.os == 'macOS'
+        if: always() && needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'macOS'
         shell: bash
         run: |
           security delete-keychain "$RUNNER_TEMP/dsh-signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/dsh-code-signing.p12"
 
       - name: Remove temporary Windows signing credentials
-        if: always() && needs.release-context.outputs.release == 'true' && runner.os == 'Windows'
+        if: always() && needs.release-context.outputs.signing_mode == 'signed' && runner.os == 'Windows'
         shell: pwsh
         run: |
           Remove-Item "$env:RUNNER_TEMP/dsh-code-signing.pfx" -Force -ErrorAction SilentlyContinue

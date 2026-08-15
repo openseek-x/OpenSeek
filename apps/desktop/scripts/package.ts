@@ -11,6 +11,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -193,13 +194,23 @@ function writeShellLauncher(path: string, commands: string[]): void {
 }
 
 /** Return the public companion launcher path for one packaged application. */
-function resolveCompanionCli(platform: DesktopPlatform, appPath: string): string {
-  if (platform === 'darwin') return join(appPath, 'Contents', 'MacOS', 'dsh')
+function resolveCompanionCli(
+  platform: DesktopPlatform,
+  appPath: string,
+  resourcesCompanion = false,
+): string {
+  if (platform === 'darwin') {
+    return join(appPath, 'Contents', resourcesCompanion ? 'Resources/bin' : 'MacOS', 'dsh')
+  }
   return join(appPath, platform === 'win32' ? 'dsh.cmd' : 'dsh')
 }
 
 /** Add the self-contained dsh companion and its private runtime shims before application signing. */
-function writeCompanionCli(platform: DesktopPlatform, appPath: string): void {
+function writeCompanionCli(
+  platform: DesktopPlatform,
+  appPath: string,
+  resourcesCompanion = false,
+): void {
   // macOS exposes the temporary directory through both /var and /private/var.
   // Normalize the whole application root before deriving relative paths so a
   // resolved dependency cannot bake that alias transition into a launcher.
@@ -248,7 +259,8 @@ function writeCompanionCli(platform: DesktopPlatform, appPath: string): void {
     return
   }
 
-  const launcher = resolveCompanionCli(platform, resolvedAppPath)
+  const launcher = resolveCompanionCli(platform, resolvedAppPath, resourcesCompanion)
+  mkdirSync(dirname(launcher), { recursive: true })
   writeShellLauncher(join(runtimeDirectory, 'node'), [
     'export ELECTRON_RUN_AS_NODE=1',
     `exec "$launcher_dir/${relative(runtimeDirectory, executable)}" "$@"`,
@@ -266,6 +278,9 @@ function writeCompanionCli(platform: DesktopPlatform, appPath: string): void {
     `exec "$launcher_dir/${relative(dirname(launcher), executable)}" `
       + `"$launcher_dir/${relative(dirname(launcher), cliEntry)}" "$@"`,
   ])
+  if (platform === 'darwin' && resourcesCompanion) {
+    symlinkSync('../Resources/bin/dsh', resolveCompanionCli(platform, resolvedAppPath))
+  }
 }
 
 const targetPlatform = resolvePlatform(process.platform)
@@ -274,10 +289,21 @@ const updateRepository = resolveUpdateRepository()
 const updateChannel = targetPlatform === 'darwin' ? `latest-${targetArch}` : 'latest'
 const releaseBuild = resolveBooleanEnvironment('DESKTOP_RELEASE_BUILD', false)
 const updatesRequested = resolveBooleanEnvironment('DESKTOP_UPDATES_ENABLED', false)
+const certificateFreeUpdateBuild = resolveBooleanEnvironment(
+  'DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD',
+  false,
+)
 if (targetPlatform === 'linux' && updatesRequested) {
   throw new Error('package-desktop: Linux only supports release-page downloads')
 }
 const updatesEnabled = targetPlatform !== 'linux' && updatesRequested
+if (certificateFreeUpdateBuild
+  && ((targetPlatform !== 'darwin' && targetPlatform !== 'win32')
+    || !updatesEnabled)) {
+  throw new Error(
+    'package-desktop: DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD requires an updater-enabled macOS or Windows build',
+  )
+}
 if (releaseBuild
   && targetPlatform !== 'linux'
   && !updatesEnabled) {
@@ -315,7 +341,7 @@ const updateRuntimeConfig: DesktopUpdateRuntimeConfig = {
   ),
 }
 
-const macSigning = targetPlatform === 'darwin' && updatesEnabled
+const macSigning = targetPlatform === 'darwin' && updatesEnabled && !certificateFreeUpdateBuild
   ? {
     identity: requiredEnvironment('DESKTOP_MAC_SIGN_IDENTITY'),
     appleId: requiredEnvironment('APPLE_ID'),
@@ -323,7 +349,7 @@ const macSigning = targetPlatform === 'darwin' && updatesEnabled
     teamId: requiredEnvironment('APPLE_TEAM_ID'),
   }
   : undefined
-const windowsSigning = targetPlatform === 'win32' && updatesEnabled
+const windowsSigning = targetPlatform === 'win32' && updatesEnabled && !certificateFreeUpdateBuild
   ? {
     certificateFile: requiredEnvironment('WINDOWS_CERTIFICATE_FILE'),
     certificatePassword: requiredEnvironment('WINDOWS_CERTIFICATE_PASSWORD'),
@@ -422,6 +448,7 @@ try {
       writeCompanionCli(
         targetPlatform,
         targetPlatform === 'darwin' ? join(buildPath, `${appName}.app`) : buildPath,
+        certificateFreeUpdateBuild,
       )
     }],
     afterCopy: [async ({ buildPath }) => {
@@ -490,6 +517,17 @@ for (const configName of ['app-update.yml', 'desktop-update.json']) {
 if (targetPlatform === 'darwin' && macSigning === undefined) {
   console.log('package-desktop: applying a local ad-hoc signature')
   run('codesign', ['--force', '--deep', '--sign', '-', packagedPath])
+  if (certificateFreeUpdateBuild) {
+    run('codesign', [
+      '--force',
+      '--sign',
+      '-',
+      '--requirements',
+      '=designated => identifier "ai.deepseek.harness"',
+      packagedPath,
+    ])
+  }
+  run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', packagedPath])
 }
 if (targetPlatform === 'darwin' && macSigning !== undefined) {
   run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', packagedPath])
@@ -524,6 +562,10 @@ if (targetPlatform === 'darwin') {
   for (const file of readdirSync(installerDirectory)) {
     if (file.endsWith('.dmg.blockmap')) unlinkSync(join(installerDirectory, file))
   }
+}
+if (targetPlatform === 'win32') {
+  const builderDebugLog = join(installerDirectory, 'builder-debug.yml')
+  if (existsSync(builderDebugLog)) unlinkSync(builderDebugLog)
 }
 
 const installerFiles = readdirSync(installerDirectory, { withFileTypes: true })
