@@ -18,7 +18,7 @@ Status: implemented
 
 Electron 持有 signal 与窗口关闭生命周期。因此，共享 profile boot 会公开进程持有或调用方持有的生命周期判别项，以及 profile patch 文件监视选项。Desktop 会选择调用方生命周期：`attach` 会在 profile boot 可能让出执行权前提供带时间上界的关停，`requestExit` 则把 profile 内的 `appExit` 交给 Electron。启动期间发起的关停会等待 profile Context 发布后再释放它，并且不会改变进程退出状态。单实例锁保证只有一份 Host 与更新器 owner；同一个关停协调器处理窗口、signal、`appExit` 与更新安装。本地 cleanup 失败会被报告，但后续 cleanup 与 Host 完全停稳仍会继续；cleanup 失败、资源释放失败或超时都会跳过安装器，并使 Electron 以非零状态退出。设置服务仍然实时生效，但由于 Electron 不公开配置 HMR 路径所需的 Node 内部 ESM loader，profile 与 home patch 文件在每次桌面启动时只读取一次。当该内部 loader 缺失时，app-boot Include 通过 `createRequire(bareModuleBaseUrl)` 解析已安装裸包。
 
-宿主原生打包器会部署带生产依赖的桌面 workspace，并修复已批准的本地 subprocess helper。macOS 与 Linux 会在非打包应用目录中保留 pnpm 相对符号链接图；Windows 使用 hoisted 部署，使 NSIS 能够归档实体依赖而不展开该链接图。桌面 manifest 会显式闭合必需的 workspace peer dependency，因为可移植 pnpm deployment 不会自动物化每个 injected 包的完整 peer 闭包。Electron Builder 在 macOS 上生成 DMG 与 ZIP，在 Windows 上生成 NSIS `.exe` 安装程序，在 Linux 上生成 `.tar.gz` 压缩包；受支持的更新格式还会附带更新元数据与 blockmap。GitHub Actions 矩阵会在原生 runner 上构建两个 Mac 架构以及 Windows x64 和 Linux x64。`dsh-vX.Y.Z` 标签必须与稳定的 `X.Y.Z` 桌面 manifest 一致，并提供 Release 签名凭据：Mac 应用会签名并 notarize，Windows 应用与安装程序带有 Authenticode 签名。所有原生 job 通过后，依赖它们的发布 job 会校验精确的产物集合与 checksum，将其上传到草稿 GitHub Release，并且只在所有上传成功后发布。公开的带标签 Release 不可变，重新运行会失败，而不是接受或替换它。手动运行只保留外层带 ZIP 且会过期的工作流产物，并保持更新禁用。[桌面自动更新决策](../feature/2026-08-14-desktop-automatic-updates.md)持有 feed、策略、通道与 seed Release 语义。
+宿主原生打包器会部署带生产依赖的桌面 workspace，并修复已批准的本地 subprocess helper。macOS 与 Linux 会在非打包应用目录中保留 pnpm 相对符号链接图；Windows 使用 hoisted 部署，使 NSIS 能够归档实体依赖而不展开该链接图。桌面 manifest 会显式闭合必需的 workspace peer dependency，因为可移植 pnpm deployment 不会自动物化每个 injected 包的完整 peer 闭包。Electron Builder 在 macOS 上生成 DMG 与 ZIP，在 Windows 上生成 NSIS `.exe` 安装程序，在 Linux 上生成 `.tar.gz` 压缩包；受支持的更新格式还会附带更新元数据与 blockmap。GitHub Actions 矩阵会在原生 runner 上构建两个 Mac 架构以及 Windows x64 和 Linux x64。`dsh-vX.Y.Z` 标签必须与稳定的 `X.Y.Z` 桌面 manifest 一致，并选择版本控制中的显式签名模式。无证书模式与经过审查的 `dsh-v0.1.1` 标签设置会给 Mac 应用提供稳定的 ad-hoc designated requirement，但不执行 notarization；Windows 应用与安装程序保持未签名并省略 `publisherName`；保留的 signed 模式则要求 Apple 与 Windows 凭据。所有原生 job 通过后，依赖它们的发布 job 会校验精确的产物集合与 checksum，将其上传到草稿 GitHub Release，并且只在所有上传成功后发布。公开的带标签 Release 不可变，重新运行会失败，而不是接受或替换它。手动运行使用无证书打包，只保留外层带 ZIP 且会过期的工作流产物，绝不会发布。[桌面自动更新决策](../feature/2026-08-14-desktop-automatic-updates.md)持有 feed、策略、通道与 seed Release 语义；[无证书 Release 模式决策](../process/2026-08-15-certificate-free-desktop-release-mode.md)持有临时的平台身份取舍。
 
 ## Security properties
 
@@ -44,6 +44,6 @@ Connection、模块注册表、loader fallback、Session 日志控制器、关�
 
 ## Consequences
 
-仓库能够生成零端口桌面应用及可分享的 `.dmg`、`.zip`、`.exe` 和 `.tar.gz` 产物，其 UI 与 Host 语义和浏览器产品保持一致。正式标签构建会建立已签名的 Mac 与 Windows 更新通道，而不会给浏览器组合加入更新行为。平台专用代码被限制在应用组装、IPC 传输、原生对话框、更新器 owner 与分发元数据；共享 API、重连行为、设置与模型提供方支持仍各有单一 owner。
+仓库能够生成零端口桌面应用及可分享的 `.dmg`、`.zip`、`.exe` 和 `.tar.gz` 产物，其 UI 与 Host 语义和浏览器产品保持一致。正式标签构建会建立经过校验的 Mac 与 Windows 更新通道，而不会给浏览器组合加入更新行为；是否具有证书支持的发布者身份取决于显式选择的 Release 模式。平台专用代码被限制在应用组装、IPC 传输、原生对话框、更新器 owner 与分发元数据；共享 API、重连行为、设置与模型提供方支持仍各有单一 owner。
 
-代价是一组体积较大的非打包目录应用、彼此独立的原生 CI job、需要长期管理的签名凭据、缺失的 Mac universal 构建，以及 Linux 压缩包没有原地更新器。Unary IPC 传输会在两个进程中占用内存，可移植打包仍需要显式 workspace peer 闭包，patch 文件 HMR 仍不可用，Release 发布还必须等待全部平台与精确产物校验步骤。
+代价是一组体积较大的非打包目录应用、彼此独立的原生 CI job、缺失的 Mac universal 构建，以及 Linux 压缩包没有原地更新器。无证书 Release 可能触发 Gatekeeper 或 SmartScreen 警告；signed Release 还需要长期管理的签名凭据。Unary IPC 传输会在两个进程中占用内存，可移植打包仍需要显式 workspace peer 闭包，patch 文件 HMR 仍不可用，Release 发布还必须等待全部平台与精确产物校验步骤。

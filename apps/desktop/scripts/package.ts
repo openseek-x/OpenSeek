@@ -299,10 +299,9 @@ if (targetPlatform === 'linux' && updatesRequested) {
 const updatesEnabled = targetPlatform !== 'linux' && updatesRequested
 if (certificateFreeUpdateBuild
   && ((targetPlatform !== 'darwin' && targetPlatform !== 'win32')
-    || !updatesEnabled
-    || desktopManifest.version !== '0.1.0')) {
+    || !updatesEnabled)) {
   throw new Error(
-    'package-desktop: DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD requires a macOS or Windows 0.1.0 updater-enabled build',
+    'package-desktop: DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD requires an updater-enabled macOS or Windows build',
   )
 }
 if (releaseBuild

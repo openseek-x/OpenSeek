@@ -1,4 +1,4 @@
-# Agent Note: 通过已签名 GitHub Releases 实现桌面自动更新
+# Agent Note: 通过 GitHub Releases 实现桌面自动更新
 
 Status: implemented
 
@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-打包后的桌面应用没有一条从已安装版本前往后续 Release 的受信路径。查找 Release、选择正确架构、替换运行中的应用以及保护 Host 工作全都留给用户处理。只增加一次网络检查并不能解决生命周期问题：更新 feed 身份、下载确认、平台签名、关停顺序与发布完整性必须一致，否则应用可能提供不受信或不完整的升级。
+打包后的桌面应用没有一条从已安装版本前往后续 Release 的受控路径。查找 Release、选择正确架构、替换运行中的应用以及保护 Host 工作全都留给用户处理。只增加一次网络检查并不能解决生命周期问题：更新 feed 身份、下载确认、平台产物身份、关停顺序与发布完整性必须一致，否则应用可能提供不完整或方向错误的升级。
 
 ## Decision
 
@@ -22,15 +22,15 @@ Electron 主进程持有一个由 GitHub Releases 支持的 `electron-updater` �
 
 官方 macOS 与 Windows 包支持原地更新。Mac 包只会在应用位于 `/Applications` 或当前用户的 `Applications` 目录时运行更新器。Arm64 使用通道 `latest-arm64` 与文档 `latest-arm64-mac.yml`；x64 使用 `latest-x64` 与 `latest-x64-mac.yml`，因此并发 Release job 不会用一个架构的通道文档覆盖另一个。Windows x64 使用 `latest.yml` 与 NSIS `.exe.blockmap`。Linux `.tar.gz` 没有通道文档或安全的替换安装器，因此其状态为 `disabled`、原因为 `unsupported-platform`，「设置」操作会打开固定的 GitHub Releases 页面供用户手动安装。
 
-首个启用更新的 Release 是需要用户手动安装的 seed 版本；下一个更高 Release 才是第一份能够验证原地路径的版本。回滚会使用另一个更高的 patch Release，而不是降级。这样能保持版本顺序单调，并避免客户端在一次受攻击或有缺陷的 Release 后重新接受较旧的已签名产物。
+首个启用更新的 Release 是需要用户手动安装的 seed 版本；下一个更高 Release 才是第一份能够验证原地路径的版本。回滚会使用另一个更高的 patch Release，而不是降级。这样能保持版本顺序单调，并避免客户端在一次受攻击或有缺陷的 Release 后重新接受较旧产物。
 
 ## Trust and publication
 
 Context-isolated preload 只公开状态读取、状态观察以及封闭的 `check`、`download`、`install`、`open-release` 操作集合。它的 CommonJS 产物会内联进程无关的 connection 解析器，而不会在运行时 require 该包的 ESM 子路径。主进程会使用与其他特权 IPC 相同的所属窗口、顶层 frame 与 `dsh://app` 检查来校验发送方。Renderer 会在渲染前解析每个 structured-clone 状态，拒绝陈旧修订号，并且只接受构建时固定的 HTTPS `github.com/<owner>/<repository>/releases` 路径。只有主进程能通过操作系统浏览器打开该页面，并持有全部更新器网络与安装器调用。
 
-Release 打包会在分发产物旁加入 Electron Builder 通道元数据与完整性 hash。Mac 应用会使用 Release 证书签名并 notarize；Windows 应用与 NSIS 安装程序会使用 Authenticode 签名。工作流只把标签推送归类为 Release 构建，并仅向其匹配的平台 job 注入签名或 notarization secret；手动运行即使指向标签，也不会获得 secret，且更新器保持禁用。标签工作流会从 PFX 推导证书的完整 X.509 Subject，并把它作为 `publisherName` 打入包中，因此 `electron-updater` 会对照预期签名者校验下载后的 NSIS 安装程序，而不是接受任意有效签名。已启用更新的构建缺少相应平台凭据或推导出的发布者身份时会失败；本地与手动触发的包可以维持未签名或 ad-hoc 签名。
+Release 打包会在分发产物旁加入 Electron Builder 通道元数据与完整性 hash。工作流只把标签推送归类为 Release 构建，并单独校验版本控制中的签名模式。当前[无证书 Release 模式决策](../process/2026-08-15-certificate-free-desktop-release-mode.md)会选择无证书模式，并单独把发布限制在 `dsh-v0.1.1`：Mac 应用使用一个稳定的 ad-hoc designated requirement，不具备 Developer ID 身份认证或 notarization；Windows 应用与 NSIS 安装程序不带签名，并省略 `publisherName`。手动运行使用相同的无证书包校验，但绝不会发布。只有显式 `signed` 模式才会注入签名与 notarization secret，把 Windows 证书的完整 X.509 Subject 推导到 `publisherName`，并在缺少任一必需凭据或发布者身份时失败；缺少 secret 绝不会选择无证书模式。
 
-`desktop-release` GitHub Environment 是正式包与发布的授权点。它必须配置 required reviewers、禁止 self-review、禁止绕过保护规则，并且只接受受保护 `dsh-v*` 标签的 deployment。它的 selected deployment rule 只包含 `dsh-v*` Tag pattern；针对 `refs/tags/dsh-v*` 的仓库 ruleset 会把标签创建权限限制给 Release 管理员，并阻止标签更新与删除。所有 Apple 或 Windows 签名与 notarization 凭据只能作为 Environment secret 存在，不得在 repository 或 organization 层级保存副本。Release Mac 与 Windows matrix job 以及最终发布 job 会绑定 `desktop-release`；Release Linux job 和所有手动 job 则绑定独立且不含 secret 的 `desktop-package` Environment。
+最终发布 job 会绑定 `desktop-release`；对于无证书 `0.1.1`，它不引用签名 secret，也不要求人工审批。无证书 Mac 与 Windows 打包 job、Linux 打包 job 和手动 job 会绑定不含 secret 的 `desktop-package` Environment。选择 `signed` 前，维护者需要为 `desktop-release` 配置 required reviewers、禁止 self-review 与绕过保护规则、选定的 `dsh-v*` Tag deployment rule 以及全部 Apple 和 Windows 签名与 notarization secret，且不得在 repository 或 organization 层级保存副本。届时 signed 模式的 Mac 与 Windows 打包 job 会绑定该 Environment，仓库 ruleset 也会限制 `refs/tags/dsh-v*` 的创建并阻止更新与删除。
 
 Release 标签必须严格采用 `dsh-vX.Y.Z`，并等于稳定的 `X.Y.Z` 桌面包版本；预发布版本会在打包前被拒绝。每个 Mac 或 Windows 打包 job 都会在上传产物前解析生成的更新文档，并验证准确的平台文件集合、主路径、大小与 SHA-512 digest。全部原生构建与打包冒烟 job 完成后才能发布。发布方会校验一套完整、无重复的跨平台产物，写入 `SHA256SUMS`，创建草稿 GitHub Release，上传每个安装程序、压缩包、更新文档与 blockmap，并且只在所有上传成功后把草稿转为公开 Release。该标签下的 Release 一旦公开便不可变：重新运行工作流会失败，而不是接受或替换其中的产物。因此，校验或上传失败无法暴露公开的不完整通道。
 
@@ -56,6 +56,6 @@ Release 标签必须严格采用 `dsh-vX.Y.Z`，并等于稳定的 `X.Y.Z` 桌�
 
 ## Consequences
 
-Mac 与 Windows 用户会获得持久更新策略、安静的定期检查、显式下载，以及仅在 Host 完全停稳后执行的安装。更新器无法从 renderer 输入静默重定向 feed，浏览器产品不会获得更新行为，公开 GitHub Releases 只会携带一套完整产物，其中 Mac 与 Windows 应用已经签名。该能力不会增加任何模型可见的提示词、消息、工具、schema 或提供方请求内容。
+Mac 与 Windows 用户会获得持久更新策略、安静的定期检查、显式下载，以及仅在 Host 完全停稳后执行的安装。更新器无法从 renderer 输入静默重定向 feed，浏览器产品不会获得更新行为，公开 GitHub Releases 只会携带一套完整产物，其中选定的 Mac 与 Windows 签名状态已经过校验。该能力不会增加任何模型可见的提示词、消息、工具、schema 或提供方请求内容。
 
-代价是平台签名与 notarization 基础设施、按架构拆分的 Mac 通道、seed Release 引导、更大的 Release 产物集合，以及一个额外的主进程长生命周期状态机。Linux 用户仍需手动安装更新，本地包无法运行已启用的 feed，而对平台替换的完整信心需要观察 seed 版本到下一个版本的 Release 组合。
+代价是按架构拆分的 Mac 通道、seed Release 引导、更大的 Release 产物集合、一个额外的主进程长生命周期状态机，以及选择无证书模式期间的操作系统信任警告。Linux 用户仍需手动安装更新，普通本地包无法运行已启用的 feed，而对平台替换的完整信心需要观察 seed 版本到下一个版本的 Release 组合。切换到 signed Release 还需要平台签名与 notarization 基础设施。

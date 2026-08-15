@@ -15,7 +15,8 @@ mac:
     - zip
   category: public.app-category.developer-tools
   icon: assets/icon.icns
-  # Electron Packager signs and notarizes the prepackaged application.
+  # package.ts applies the selected signature to the prepackaged application;
+  # Builder must preserve it while creating the DMG and updater ZIP.
   identity: null
   notarize: false
   publish:
@@ -31,6 +32,7 @@ dmg:
 win:
   target: nsis
   icon: assets/icon.ico
+  # The workflow supplies CSC credentials only in explicit signed mode.
   signExecutable: true
   publish:
     provider: github
