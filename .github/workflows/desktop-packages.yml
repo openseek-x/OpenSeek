@@ -172,7 +172,8 @@ jobs:
         run: pnpm run package:desktop
         env:
           DESKTOP_RELEASE_BUILD: ${{ needs.release-context.outputs.release }}
-          DESKTOP_UPDATES_ENABLED: ${{ needs.release-context.outputs.release == 'true' && runner.os != 'Linux' && 'true' || 'false' }}
+          DESKTOP_UPDATES_ENABLED: ${{ (needs.release-context.outputs.release == 'true' || github.event_name == 'workflow_dispatch') && runner.os != 'Linux' && 'true' || 'false' }}
+          DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && runner.os != 'Linux' && 'true' || 'false' }}
           DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
           DESKTOP_MAC_SIGN_IDENTITY: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.MACOS_SIGN_IDENTITY || '' }}
           APPLE_ID: ${{ needs.release-context.outputs.release == 'true' && runner.os == 'macOS' && secrets.APPLE_ID || '' }}
@@ -186,6 +187,61 @@ jobs:
       - name: Verify updater metadata
         if: runner.os != 'Linux'
         run: pnpm exec tsx scripts/verify-desktop-update-metadata.ts dist-desktop/installers ${{ matrix.platform }}
+
+      - name: Verify certificate-free macOS update seed
+        if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          application="dist-desktop/DeepSeek Harness-darwin-${{ matrix.arch }}/DeepSeek Harness.app"
+          codesign --verify --deep --strict --verbose=2 "$application"
+          codesign -d -r- "$application" 2>&1 |
+            grep -Fx -- 'designated => identifier "ai.deepseek.harness"'
+          codesign -dv --verbose=4 "$application" 2>&1 | grep -Fx -- 'Signature=adhoc'
+          [ -L "$application/Contents/MacOS/dsh" ]
+          [ "$(readlink "$application/Contents/MacOS/dsh")" = '../Resources/bin/dsh' ]
+          UPDATE_CONFIG="$application/Contents/Resources/desktop-update.json" \
+            EXPECTED_CHANNEL="latest-${{ matrix.arch }}" \
+            node -e "const { readFileSync } = require('node:fs'); const config = JSON.parse(readFileSync(process.env.UPDATE_CONFIG, 'utf8')); if (config.enabled !== true || config.channel !== process.env.EXPECTED_CHANNEL) throw new Error('certificate-free macOS updater configuration is not enabled on the expected channel')"
+
+          shopt -s nullglob
+          archives=(dist-desktop/installers/*-mac-${{ matrix.arch }}.zip)
+          [ "${#archives[@]}" -eq 1 ]
+          extraction="$RUNNER_TEMP/dsh-mac-update-seed"
+          mkdir -p "$extraction"
+          ditto -x -k "${archives[0]}" "$extraction"
+          extracted_application="$extraction/DeepSeek Harness.app"
+          codesign --verify --deep --strict --verbose=2 "$extracted_application"
+          codesign -d -r- "$extracted_application" 2>&1 |
+            grep -Fx -- 'designated => identifier "ai.deepseek.harness"'
+          [ "$("$extracted_application/Contents/MacOS/dsh" --version)" = '0.1.0' ]
+
+      - name: Verify certificate-free Windows update seed
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $application = 'dist-desktop/DeepSeek Harness-win32-${{ matrix.arch }}/DeepSeek Harness.exe'
+          $installer = Get-ChildItem 'dist-desktop/installers' -Filter '*.exe' -File
+          if ($installer.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($installer.Count)"
+          }
+          foreach ($path in @($application, $installer[0].FullName)) {
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne 'NotSigned') {
+              throw "Expected no Authenticode signature for ${path}, got $($signature.Status)"
+            }
+          }
+
+          $resources = 'dist-desktop/DeepSeek Harness-win32-${{ matrix.arch }}/resources'
+          $appUpdate = Get-Content (Join-Path $resources 'app-update.yml') -Raw
+          if ($appUpdate -match '(?m)^publisherName:') {
+            throw 'Certificate-free app-update.yml must omit publisherName'
+          }
+          $runtimeConfig = Get-Content (Join-Path $resources 'desktop-update.json') -Raw |
+            ConvertFrom-Json
+          if ($runtimeConfig.enabled -ne $true -or $runtimeConfig.channel -ne 'latest') {
+            throw 'Certificate-free Windows updater configuration is not enabled on latest'
+          }
 
       - name: Configure Linux Chromium sandbox helper
         if: runner.os == 'Linux'
