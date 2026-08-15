@@ -564,6 +564,10 @@ if (targetPlatform === 'darwin') {
     if (file.endsWith('.dmg.blockmap')) unlinkSync(join(installerDirectory, file))
   }
 }
+if (targetPlatform === 'win32') {
+  const builderDebugLog = join(installerDirectory, 'builder-debug.yml')
+  if (existsSync(builderDebugLog)) unlinkSync(builderDebugLog)
+}
 
 const installerFiles = readdirSync(installerDirectory, { withFileTypes: true })
   .filter(entry => entry.isFile())
