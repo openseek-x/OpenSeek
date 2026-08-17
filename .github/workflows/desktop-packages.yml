@@ -70,14 +70,14 @@ jobs:
       - name: Verify runner architecture
         run: node -e "if (process.arch !== '${{ matrix.arch }}') throw new Error('expected ${{ matrix.arch }}, got ' + process.arch)"
 
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
       - name: Verify release tag
         if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: node -e "const { version } = require('./apps/desktop/package.json'); const expected = 'dsh-v' + version; if (process.env.RELEASE_TAG !== expected) throw new Error('expected tag ' + expected + ', got ' + process.env.RELEASE_TAG)"
-
-      - name: Install (immutable)
-        run: pnpm install --frozen-lockfile
+        run: pnpm exec tsx apps/desktop/scripts/verify-release-tag.ts
 
       - name: Install Linux display server
         if: runner.os == 'Linux'

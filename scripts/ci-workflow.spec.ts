@@ -211,6 +211,32 @@ describe('CI workflow', () => {
   })
 })
 
+describe('Desktop packages workflow', () => {
+  it('runs the shared tag verifier after dependencies are available', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
+    if (!isRecord(workflow.on) || !isRecord(workflow.on.push)) {
+      throw new TypeError('Desktop packages workflow must define a tag push trigger')
+    }
+    const packageJob = workflowJob(workflow, 'package')
+    if (!Array.isArray(packageJob.steps)) throw new TypeError('Desktop packages job must define steps')
+
+    expect(workflow.on.push).toEqual({ tags: ['dsh-v*'] })
+    const steps = packageJob.steps.filter(isRecord)
+    const install = steps.find(step => step.name === 'Install (immutable)')
+    const verifyTag = steps.find(step => step.name === 'Verify release tag')
+    if (install === undefined || verifyTag === undefined) {
+      throw new TypeError('Desktop packages job must install dependencies and verify release tags')
+    }
+
+    expect(verifyTag).toMatchObject({
+      if: "github.ref_type == 'tag'",
+      env: { RELEASE_TAG: '${{ github.ref_name }}' },
+      run: 'pnpm exec tsx apps/desktop/scripts/verify-release-tag.ts',
+    })
+    expect(steps.indexOf(verifyTag)).toBeGreaterThan(steps.indexOf(install))
+  })
+})
+
 describe('E2B e2e workflow', () => {
   it('is manual-only and fails loud before running the focused live suite', () => {
     const workflow = loadWorkflow('.github/workflows/e2b-e2e.yml')

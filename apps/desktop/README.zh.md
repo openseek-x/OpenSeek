@@ -22,7 +22,7 @@ pnpm run test:desktop:packaged
 - Windows：`dist-desktop/installers/DeepSeek-Harness-<version>-win-<arch>.exe`
 - Linux：`dist-desktop/installers/DeepSeek-Harness-<version>-linux-<arch>.tar.gz`
 
-`test:desktop:packaged` 会启动组装后的应用，通过随机的本机 Chromium 调试端口等待完整界面组合完成，并检查可见内容。[Desktop packages](../../.github/workflows/desktop-packages.yml) 会针对 macOS arm64 与 x64、Windows x64 和 Linux x64 执行原生构建与冒烟测试，再把各安装程序或压缩包上传为工作流产物。`dsh-v<version>` 标签必须与桌面 manifest 版本一致；四个 job 全部通过后，工作流会把原始 `.dmg`、`.exe`、`.tar.gz` 文件和 `SHA256SUMS` 直接添加到对应的 GitHub Release，外层不再套 ZIP。手动运行只保留外层带 ZIP 且有效期为 14 天的工作流产物，不会发布 Release。
+`test:desktop:packaged` 会启动组装后的应用，通过随机的本机 Chromium 调试端口等待完整界面组合完成，并检查可见内容。[Desktop packages](../../.github/workflows/desktop-packages.yml) 会针对 macOS arm64 与 x64、Windows x64 和 Linux x64 执行原生构建与冒烟测试，再把各安装程序或压缩包上传为工作流产物。稳定桌面 manifest 版本接受 `dsh-v<version>` 与 `dsh-v<version>-rc.<number>` 标签；预发布 manifest 只接受其精确标签。标签不会改变内嵌的桌面版本。四个 job 全部通过后，工作流会把原始 `.dmg`、`.exe`、`.tar.gz` 文件和 `SHA256SUMS` 直接添加到对应的 GitHub Release，外层不再套 ZIP。手动运行只保留外层带 ZIP 且有效期为 14 天的工作流产物，不会发布 Release。
 
 从终端启动时，终端当前目录是初始 workspace。从 Finder 启动且继承的工作目录为 `/` 时，应用从用户的 Documents 目录开始；在应用内选择其他 workspace 后，会按常规方式切换活动 workspace。
 
