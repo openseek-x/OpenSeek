@@ -230,11 +230,11 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   }
   ctx.effect(() => {
     if (ctx.get('webServer') !== undefined && ctx.get('apiProxy') !== undefined) mountDownlinks(ctx)
-    return () => unmountDownlinks()
+    return () => { unmountDownlinks() }
   }, 'client-connection: initial WebSocket carriers')
   ctx.inject(['webServer', 'apiProxy'], (carrierCtx) => {
     mountDownlinks(carrierCtx)
-    return () => unmountDownlinks(carrierCtx)
+    return () => { unmountDownlinks(carrierCtx) }
   })
 }
 
@@ -256,12 +256,12 @@ function observeWebServer(
     active = undefined
   }
   ctx.effect(() => {
-    const initial = ctx.get('webServer') as WebServer | undefined
+    const initial = ctx.get('webServer')
     if (initial !== undefined) mount(initial)
-    return () => unmount()
+    return () => { unmount() }
   }, `${label} initial carrier`)
   ctx.inject(['webServer'], (webCtx) => {
     mount(webCtx.webServer)
-    return () => unmount(webCtx.webServer)
+    return () => { unmount(webCtx.webServer) }
   })
 }

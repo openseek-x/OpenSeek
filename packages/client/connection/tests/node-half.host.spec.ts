@@ -140,7 +140,8 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
     expect(upgrades).toHaveLength(0)
 
-    const removeWebServer = ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
+    // The service effect waits for dependent carriers even though the public overload is void.
+    const removeWebServer = ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer) as unknown as () => Promise<void>
     await Promise.resolve()
     expect(routes.map(route => route.path)).toEqual([API_PATH, '/rpc'])
     expect(upgrades.map(route => route.path)).toEqual([MUX_EVENTS_PATH, HOST_EVENTS_PATH])

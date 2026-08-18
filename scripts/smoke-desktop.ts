@@ -210,7 +210,12 @@ let debugPort: number | undefined
 let ready = false
 let testFailure: Error | undefined
 let mainWebSocketDebuggerUrl: string | undefined
-const child = spawn(executable, ['--inspect=0', '--remote-debugging-port=0'], {
+const userDataDirectory = mkdtempSync(join(tmpdir(), 'dsh-desktop-smoke-user-data-'))
+const child = spawn(executable, [
+  '--inspect=0',
+  '--remote-debugging-port=0',
+  `--user-data-dir=${userDataDirectory}`,
+], {
   cwd: repositoryRoot,
   stdio: ['ignore', 'pipe', 'pipe'],
 })
@@ -329,6 +334,7 @@ try {
   } else if (!output.includes('dsh desktop: shutdown quiesced')) {
     testFailure ??= new Error('desktop smoke: packaged application bypassed coordinated shutdown')
   }
+  rmSync(userDataDirectory, { recursive: true, force: true })
 }
 
 if (testFailure !== undefined) throw testFailure

@@ -109,6 +109,7 @@ describe('client bundle activation', () => {
     const service = new ClientModuleRegistry(ctx)
     const routes: WebRoute[] = []
     const transforms: Array<(html: string) => string> = []
+    // The service effect waits for dependent carriers even though the public overload is void.
     const removeWebServer = ctx.provide('webServer', {
       port: 0,
       register(route: WebRoute) {
@@ -120,7 +121,7 @@ describe('client bundle activation', () => {
         transforms.push(transform)
         return () => { transforms.splice(transforms.indexOf(transform), 1) }
       },
-    } as unknown as WebServer)
+    } as unknown as WebServer) as unknown as () => Promise<void>
     await service[Service.init]()
 
     expect(service.graph().entries).toMatchObject([{ id: packageName }])

@@ -253,13 +253,13 @@ export class ClientModuleRegistry extends Service {
       active = undefined
     }
     ctx.effect(() => {
-      const initial = ctx.get('webServer') as WebServer | undefined
+      const initial = ctx.get('webServer')
       if (initial !== undefined) mount(initial)
-      return () => unmount()
+      return () => { unmount() }
     }, 'client-modules: initial Web carrier')
     this.webCarrier = ctx.inject(['webServer'], (webCtx) => {
       mount(webCtx.webServer)
-      return () => unmount(webCtx.webServer)
+      return () => { unmount(webCtx.webServer) }
     })
   }
 

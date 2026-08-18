@@ -142,11 +142,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
         active.dispose()
         active = undefined
       }
-      const initial = owner.get('webServer') as WebServer | undefined
+      const initial = owner.get('webServer')
       if (initial !== undefined) mount(initial)
       const carrier = owner.inject(['webServer'], (webCtx) => {
         mount(webCtx.webServer)
-        return () => unmount(webCtx.webServer)
+        return () => { unmount(webCtx.webServer) }
       })
       return async () => {
         unmount()

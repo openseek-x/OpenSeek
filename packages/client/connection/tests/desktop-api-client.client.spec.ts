@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { DesktopApiClient } from '../src/client/desktop-api-client.ts'
-import type { DesktopConnectionBridge, DesktopStreamSink } from '../src/rpc.ts'
+import type { DesktopConnectionBridge, DesktopRequest, DesktopStreamSink } from '../src/rpc.ts'
 
 function responseBody(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value))
@@ -11,7 +11,7 @@ function responseBody(value: unknown): Uint8Array {
 describe('DesktopApiClient', () => {
   it('serializes unary requests and reconstructs byte-exact responses', async () => {
     Object.defineProperty(globalThis, 'location', { value: { origin: 'dsh://app' }, configurable: true })
-    const request = vi.fn(async (message) => {
+    const request = vi.fn(async (message: DesktopRequest) => {
       const envelope = JSON.parse(new TextDecoder().decode(message.body)) as { rpcId: string }
       return {
         status: 200,
@@ -52,7 +52,7 @@ describe('DesktopApiClient', () => {
     const bridge: DesktopConnectionBridge = {
       request: vi.fn(),
       cancelRequest: vi.fn(),
-      openStream: vi.fn((_request, next) => { sink = next }),
+      openStream: vi.fn((_request: DesktopRequest, next: DesktopStreamSink) => { sink = next }),
       cancelStream,
       saveDownload: vi.fn(),
     }

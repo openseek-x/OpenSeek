@@ -69,7 +69,9 @@ function defaultFetch(input: string | URL, init?: RequestInit): Promise<Response
   const url = input instanceof URL ? input : new URL(input, hostBase())
   const id = crypto.randomUUID()
   const signal = init?.signal ?? null
-  if (signal?.aborted === true) return Promise.reject(signal.reason)
+  if (signal?.aborted === true) {
+    return Promise.reject(signal.reason instanceof Error ? signal.reason : new DOMException('The operation was aborted.', 'AbortError'))
+  }
   const onAbort = (): void => { desktop.cancelRequest(id) }
   signal?.addEventListener('abort', onAbort, { once: true })
   return desktop.request({
@@ -87,7 +89,11 @@ function defaultFetch(input: string | URL, init?: RequestInit): Promise<Response
 function defaultSave(url: string, filename: string): void | Promise<void> {
   const desktop = desktopBridge()
   const parsed = new URL(url)
-  return desktop === undefined ? downloadUrl(url, filename) : desktop.saveDownload(parsed.pathname + parsed.search, filename)
+  if (desktop === undefined) {
+    downloadUrl(url, filename)
+    return
+  }
+  return desktop.saveDownload(parsed.pathname + parsed.search, filename)
 }
 
 function messageOf(error: unknown): string {

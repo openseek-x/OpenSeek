@@ -31,19 +31,18 @@ export class DesktopApiClient extends AbstractApiClient {
   }
 
   private async unary(request: DesktopRequest, signal: AbortSignal | null): Promise<Response> {
-    if (signal?.aborted === true) throw abortError(signal)
-    let aborted = false
+    if (signal === null) return responseOf(await this.bridge.request(request))
+    throwAbortErrorIfAborted(signal)
     const onAbort = (): void => {
-      aborted = true
       this.bridge.cancelRequest(request.id)
     }
-    signal?.addEventListener('abort', onAbort, { once: true })
+    signal.addEventListener('abort', onAbort, { once: true })
     try {
       const response = await this.bridge.request(request)
-      if (aborted && signal !== null) throw abortError(signal)
+      throwAbortErrorIfAborted(signal)
       return responseOf(response)
     } finally {
-      signal?.removeEventListener('abort', onAbort)
+      signal.removeEventListener('abort', onAbort)
     }
   }
 
@@ -100,6 +99,11 @@ function isStreamPath(url: URL): boolean {
 
 function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new DOMException('The operation was aborted.', 'AbortError')
+}
+
+/** Throw the normalized AbortError after an asynchronous operation observes cancellation. */
+function throwAbortErrorIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortError(signal)
 }
 
 function responseOf(response: DesktopResponse): Response {
