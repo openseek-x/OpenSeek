@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-desktop-update",
   "description": "Desktop update settings and non-modal renderer surfaces over Electron's context-isolated updater bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publishConfig": {
     "access": "public"
   },
