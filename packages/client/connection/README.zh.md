@@ -22,6 +22,12 @@ Node half 会在桥接或 upgrade 前守卫 `/api` 下的每个入口（`src/api
 
 当存在经过校验的 `globalThis.dshDesktop` preload 桥时，apply 会构造 `DesktopApiClient`，并让通用 RPC 走同一个 `ConnectionFetch`。请求 id、method、header 和可选字节以 structured-clone 值穿过桥；unary 回复会重建为标准 `Response`。两条事件路径在流式 IPC 响应中保留 API Proxy 的 SSE framing，因此继承的解析器与 connection generation 行为无需改变。Abort signal 会取消主进程中对应的请求或流。该路径的信任来自 Electron 壳对 sender、顶层 frame 与 origin 的校验；受信进程内分发器有意不应用浏览器 Host-header fence。
 
+## 桌面更新桥
+
+本包还持有独立 `globalThis.dshDesktopUpdate` preload 桥的共享 structured-clone 协议。`DesktopUpdatePolicy` 把策略封闭为 `background`、`startup`、`manual` 或 `disabled`；`DesktopUpdateAction` 把 renderer 请求封闭为 `check`、`download`、`install` 或 `open-release`；带修订号的 `DesktopUpdateState` 值则区分 `disabled`、`idle`、`checking`、`available`、`downloading`、`ready` 与 `error`。该桥支持状态读取、状态观察与经过校验的操作调用。
+
+`isDesktopUpdateAction` 保护主进程 IPC 入口，`parseDesktopUpdateState` 则检查每个主进程到 renderer 的值，包括各状态专用字段、安全整数修订号、有界进度、时间戳与精确的 HTTPS GitHub Releases URL 形式。Electron 壳实现该桥并持有更新器生命周期；[`dsh-client-ui-desktop-update`](../ui-desktop-update/README.md)持有持久设置与 renderer 展示。本包不会开始 Release 检查，也不会打开安装器。[自动更新 Agent Note](../../../.agents/notes/implemented/feature/2026-08-14-desktop-automatic-updates.md)记录了跨进程信任与发布决策。
+
 ## 模型体验
 
 无。该层只在客户端与 Host 之间搬运已经组合好的消息；这里没有任何内容进入模型请求。

@@ -22,6 +22,12 @@ When markers are present, `Origin` must equal the Host authority and an explicit
 
 When a validated `globalThis.dshDesktop` preload bridge is present, apply constructs `DesktopApiClient` and routes generic RPC through the same `ConnectionFetch`. Request ids, methods, headers, and optional bytes cross as structured-clone values; unary replies are reconstructed as standard `Response` objects. Both event paths keep the API Proxy's SSE framing inside a streamed IPC response, so the inherited parser and connection-generation behavior remain unchanged. Abort signals cancel the matching main-process request or stream. Trust for this path belongs to the Electron shell's sender, top-frame, and origin validation; the trusted in-process dispatcher deliberately does not apply the browser Host-header fence.
 
+## Desktop update bridge
+
+This package also owns the shared structured-clone protocol for the separate `globalThis.dshDesktopUpdate` preload bridge. `DesktopUpdatePolicy` closes policy to `background`, `startup`, `manual`, or `disabled`; `DesktopUpdateAction` closes renderer requests to `check`, `download`, `install`, or `open-release`; and revisioned `DesktopUpdateState` values distinguish `disabled`, `idle`, `checking`, `available`, `downloading`, `ready`, and `error`. The bridge supports state reads, state observation, and validated action invocation.
+
+`isDesktopUpdateAction` protects the main-process IPC entry, while `parseDesktopUpdateState` checks every main-to-renderer value, including status-specific fields, safe-integer revisions, bounded progress, timestamps, and the exact HTTPS GitHub Releases URL form. The Electron shell implements the bridge and owns the updater lifecycle; [`dsh-client-ui-desktop-update`](../ui-desktop-update/README.md) owns the durable setting and renderer presentation. This package starts no release check and opens no installer. The [automatic-update Agent Note](../../../.agents/notes/implemented/feature/2026-08-14-desktop-automatic-updates.md) records the cross-process trust and release decisions.
+
 ## Model Experience
 
 None, as this layer moves already-composed messages between client and Host; nothing here reaches a model request.

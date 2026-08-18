@@ -741,6 +741,23 @@
         "pnpm"
       ]
     },
+    "apps/desktop": {
+      "entry": [
+        "src/bootstrap.ts",
+        "src/main.ts",
+        "src/preload.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "scripts/**/*.ts",
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/.+",
+        "electron-builder"
+      ]
+    },
     "packages/client/modules": {
       "entry": [
         "tests/**/*.spec.ts"

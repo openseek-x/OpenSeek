@@ -2,7 +2,7 @@
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Electron desktop application for DeepSeek Harness with an in-process IPC transport",
   "author": "OpenSeek Contributors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -34,6 +34,7 @@
     "@deepseek-ai/dsh-bash-local": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
     "@deepseek-ai/dsh-client-modules": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-desktop-update": "workspace:^",
     "@deepseek-ai/dsh-client-ui-directory-picker-native": "workspace:^",
     "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-compaction": "workspace:^",
@@ -52,6 +53,7 @@
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-session-telemetry": "workspace:^",
     "@deepseek-ai/dsh-session-title-llm": "workspace:^",
+    "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-shell": "workspace:^",
     "@deepseek-ai/dsh-spill": "workspace:^",
     "@deepseek-ai/dsh-subagent-in-process-driver": "workspace:^",
@@ -60,7 +62,8 @@
     "@deepseek-ai/dsh-timeout": "workspace:^",
     "@deepseek-ai/dsh-web-app": "workspace:^",
     "@deepseek-ai/dsh-web-frontend": "workspace:^",
-    "@deepseek-ai/dsh-workflow": "workspace:^"
+    "@deepseek-ai/dsh-workflow": "workspace:^",
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

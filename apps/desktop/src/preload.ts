@@ -3,12 +3,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopConnectionBridge, DesktopStreamSink } from '@deepseek-ai/dsh-client-connection'
 import {
+  parseDesktopUpdateState,
+  type DesktopUpdateBridge,
+} from '@deepseek-ai/dsh-client-connection/desktop-update'
+import {
   IPC_FETCH,
   IPC_FETCH_CANCEL,
   IPC_SAVE_DOWNLOAD,
   IPC_STREAM_CANCEL,
   IPC_STREAM_EVENT,
   IPC_STREAM_OPEN,
+  IPC_UPDATE_ACTION,
+  IPC_UPDATE_GET_STATE,
+  IPC_UPDATE_STATE,
   type IpcDownloadRequest,
   type IpcRequest,
   type IpcResponse,
@@ -16,6 +23,7 @@ import {
 } from './ipc.ts'
 
 const streams = new Map<string, DesktopStreamSink>()
+const updateListeners = new Set<Parameters<DesktopUpdateBridge['onState']>[0]>()
 let downloadSequence = 0
 
 function nextDownloadId(): string {
@@ -44,6 +52,11 @@ ipcRenderer.on(IPC_STREAM_EVENT, (_event, payload: IpcStreamEvent) => {
   }
 })
 
+ipcRenderer.on(IPC_UPDATE_STATE, (_event, value: unknown) => {
+  const state = parseDesktopUpdateState(value)
+  for (const listener of updateListeners) listener(state)
+})
+
 const bridge: DesktopConnectionBridge = {
   request(request) {
     return ipcRenderer.invoke(IPC_FETCH, request) as Promise<IpcResponse>
@@ -67,4 +80,18 @@ const bridge: DesktopConnectionBridge = {
   },
 }
 
+const updateBridge: DesktopUpdateBridge = {
+  async getState() {
+    return parseDesktopUpdateState(await ipcRenderer.invoke(IPC_UPDATE_GET_STATE) as unknown)
+  },
+  async act(action) {
+    return parseDesktopUpdateState(await ipcRenderer.invoke(IPC_UPDATE_ACTION, action) as unknown)
+  },
+  onState(listener) {
+    updateListeners.add(listener)
+    return () => { updateListeners.delete(listener) }
+  },
+}
+
 contextBridge.exposeInMainWorld('dshDesktop', bridge)
+contextBridge.exposeInMainWorld('dshDesktopUpdate', updateBridge)

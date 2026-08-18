@@ -10,23 +10,23 @@ Status: implemented
 
 ## Decision
 
-`apps/desktop` 是 Electron 应用。其主进程通过 `@deepseek-ai/dsh/profile-boot` 启动现有 `web` profile，并应用 `config/desktop.patch.yml`：禁用 Web 服务器、浏览器 startup/runtime、HMR client 和浏览器目录选择器；保留共享 Connection 与客户端模块注册表，再用原生目录选择器条目替换浏览器选择器。桌面应用不新增模型可见组合，并与 `dsh web` 使用相同的设置、凭据、Session、提供方适配器和客户端插件图。
+`apps/desktop` 是 Electron 应用。其主进程通过 `@deepseek-ai/dsh/profile-boot` 启动现有 `web` profile，并应用 `config/desktop.patch.yml`：禁用 Web 服务器、浏览器 startup/runtime、HMR client 和浏览器目录选择器；保留共享 Connection 与客户端模块注册表，再用原生目录选择器与自动更新条目替换或扩展浏览器组合。桌面应用不新增模型可见组合，并与 `dsh web` 使用相同的设置、凭据、Session、提供方适配器和客户端插件图。
 
-主进程从特权 `dsh://app/` origin 提供已构建前端和客户端 bundle 图，并通过客户端模块注册表的公开图 helper 注入启动 manifest。沙箱化且 context-isolated 的 renderer 不启用 Node integration。其 preload 只公开 structured-clone 请求、取消、流和原生保存操作。
+主进程从特权 `dsh://app/` origin 提供已构建前端和客户端 bundle 图，并通过客户端模块注册表的公开图 helper 注入启动 manifest。沙箱化且 context-isolated 的 renderer 不启用 Node integration。其 preload 只公开 structured-clone 请求、取消、流、原生保存以及自动更新状态／操作。
 
-`dsh-client-connection` 持有不依赖传输的 Host Fetch 分发器。Web 组合把它投射为 `/api` 与两条 WebSocket 下行。`DesktopApiClient` 则把 Fetch 元数据和字节序列化到 Electron IPC；unary 响应以一个字节数组返回，`events.mux` 与 `events.host` 把现有 SSE 表示流式传为 IPC 分块。继承的 API parser、rpcId 规则、重连状态机和通用 RPC caller 不变。主进程会先校验所属 `webContents`、顶层 frame、`dsh://app` origin、URL authority、method、header、body 大小和原生保存文件名，再调用受信进程内分发器。浏览器 Host-header 与 origin fence 仍位于网络 route，不会在已校验的本地路径内重复执行。
+`dsh-client-connection` 持有不依赖传输的 Host Fetch 分发器。Web 组合把它投射为 `/api` 与两条 WebSocket 下行。`DesktopApiClient` 则把 Fetch 元数据和字节序列化到 Electron IPC；unary 响应以一个字节数组返回，`events.mux` 与 `events.host` 把现有 SSE 表示流式传为 IPC 分块。继承的 API parser、rpcId 规则、重连状态机和通用 RPC caller 不变。主进程会先校验所属 `webContents`、顶层 frame、`dsh://app` origin、URL authority、method、header、body 大小、原生保存文件名以及封闭的更新操作集合，再进入特权代码。浏览器 Host-header 与 origin fence 仍位于网络 route，不会在已校验的本地路径内重复执行。
 
-Electron 持有 signal 与窗口关闭生命周期。因此，共享 profile boot 公开 signal 接管与 profile patch 文件监视的关闭选项。设置服务仍然实时生效，但由于 Electron 不公开配置 HMR 路径所需的 Node 内部 ESM loader，profile 与 home patch 文件在每次桌面启动时只读取一次。当该内部 loader 缺失时，app-boot Include 通过 `createRequire(bareModuleBaseUrl)` 解析已安装裸包。
+Electron 持有 signal 与窗口关闭生命周期。因此，共享 profile boot 会公开进程持有或调用方持有的生命周期判别项，以及 profile patch 文件监视选项。Desktop 会选择调用方生命周期：`attach` 会在 profile boot 可能让出执行权前提供带时间上界的关停，`requestExit` 则把 profile 内的 `appExit` 交给 Electron。启动期间发起的关停会等待 profile Context 发布后再释放它，并且不会改变进程退出状态。单实例锁保证只有一份 Host 与更新器 owner；同一个关停协调器处理窗口、signal、`appExit` 与更新安装。本地 cleanup 失败会被报告，但后续 cleanup 与 Host 完全停稳仍会继续；cleanup 失败、资源释放失败或超时都会跳过安装器，并使 Electron 以非零状态退出。设置服务仍然实时生效，但由于 Electron 不公开配置 HMR 路径所需的 Node 内部 ESM loader，profile 与 home patch 文件在每次桌面启动时只读取一次。当该内部 loader 缺失时，app-boot Include 通过 `createRequire(bareModuleBaseUrl)` 解析已安装裸包。
 
-宿主原生打包器会部署带生产依赖的桌面 workspace，并修复已批准的本地 subprocess helper。macOS 与 Linux 会在非打包应用目录中保留 pnpm 相对符号链接图；Windows 使用 hoisted 部署，使 NSIS 能够归档实体依赖而不展开该链接图。桌面 manifest 会显式闭合必需的 workspace peer dependency，因为可移植 pnpm deployment 不会自动物化每个 injected 包的完整 peer 闭包。Electron Builder 在 macOS 上生成 DMG，在 Windows 上生成 NSIS `.exe` 安装程序，在 Linux 上生成 `.tar.gz` 压缩包。GitHub Actions 矩阵会在原生 runner 上构建两个 Mac 架构以及 Windows x64 和 Linux x64。稳定桌面 manifest 版本接受 `dsh-v<version>` 与 `dsh-v<version>-rc.<number>` 标签；预发布 manifest 只接受其精确标签。该检查会拒绝 manifest 稳定版本线之外的标签，且不会改变内嵌的桌面版本。四个原生 job 全部通过后，依赖它们的发布 job 会把原始安装包和 `SHA256SUMS` 直接添加到对应的 GitHub Release，外层不再套 ZIP。手动运行只保留外层带 ZIP 且会过期的工作流产物。分发刻意不使用发布证书：Mac 应用只有未 notarize 的 ad-hoc 签名，Windows 安装程序未签名，各平台均使用品牌图标资源。
+宿主原生打包器会部署带生产依赖的桌面 workspace，并修复已批准的本地 subprocess helper。macOS 与 Linux 会在非打包应用目录中保留 pnpm 相对符号链接图；Windows 使用 hoisted 部署，使 NSIS 能够归档实体依赖而不展开该链接图。桌面 manifest 会显式闭合必需的 workspace peer dependency，因为可移植 pnpm deployment 不会自动物化每个 injected 包的完整 peer 闭包。Electron Builder 在 macOS 上生成 DMG 与 ZIP，在 Windows 上生成 NSIS `.exe` 安装程序，在 Linux 上生成 `.tar.gz` 压缩包；受支持的更新格式还会附带更新元数据与 blockmap。GitHub Actions 矩阵会在原生 runner 上构建两个 Mac 架构以及 Windows x64 和 Linux x64。`dsh-vX.Y.Z` 标签必须与稳定的 `X.Y.Z` 桌面 manifest 一致，并选择版本控制中的显式签名模式。无证书模式与经过审查的 `dsh-v0.1.1` 标签设置会给 Mac 应用提供稳定的 ad-hoc designated requirement，但不执行 notarization；Windows 应用与安装程序保持未签名并省略 `publisherName`；保留的 signed 模式则要求 Apple 与 Windows 凭据。所有原生 job 通过后，依赖它们的发布 job 会校验精确的产物集合与 checksum，将其上传到草稿 GitHub Release，并且只在所有上传成功后发布。公开的带标签 Release 不可变，重新运行会失败，而不是接受或替换它。手动运行使用无证书打包，只保留外层带 ZIP 且会过期的工作流产物，绝不会发布。[桌面自动更新决策](../feature/2026-08-14-desktop-automatic-updates.md)持有 feed、策略、通道与 seed Release 语义；[无证书 Release 模式决策](../process/2026-08-15-certificate-free-desktop-release-mode.md)持有临时的平台身份取舍。
 
 ## Security properties
 
-桌面 origin 与网络隔离：导航保持在 `dsh://app`，Electron 权限请求全部拒绝，外部 HTTP(S) 链接通过操作系统离开应用，内容安全策略会阻止远程脚本、frame、object 与连接。仅因随附 Cordis 客户端需要求值配置表达式而保留 `unsafe-eval`。原生 Session 日志导出会在主进程中把 Host 响应流式写入用户选定文件；renderer 永远拿不到选定路径或 ZIP 字节。
+桌面 origin 与网络隔离：导航保持在 `dsh://app`，Electron 权限请求全部拒绝，外部 HTTP(S) 链接通过操作系统离开应用，内容安全策略会阻止远程脚本、frame、object 与连接。仅因随附 Cordis 客户端需要求值配置表达式而保留 `unsafe-eval`。原生 Session 日志导出会在主进程中把 Host 响应流式写入用户选定文件；renderer 永远拿不到选定路径或 ZIP 字节。更新器 feed 身份来自经过校验的打包资源，renderer 消息无法替换它，Release 页面导航也只接受固定的 HTTPS GitHub 路径。
 
 ## Verification
 
-Connection、模块注册表、loader fallback 与 Session 日志控制器测试覆盖新的选择、序列化、流、取消、可选 Web 服务器、解析和原生保存路径。无密钥的组装 Web replay 继续覆盖被复用的 UI 组合。打包脚本要求只生成一个带平台预期后缀的分发产物。`scripts/smoke-desktop.ts` 会启动当前平台组装后的应用，通过随机 loopback Chromium 调试 endpoint 等待完全组合的 `dsh://app/` renderer，检查可见内容，并使用有界终止阶梯完成清理。原生工作流 job 会针对四个发布目标重复该构建与冒烟测试。桌面发布 tag 测试接受稳定标签及其版本线中的数字 release candidate，并拒绝其他所有 tag。仅标签运行的发布 job 要求恰有两个 DMG、一个 `.exe`、一个 `.tar.gz` 且没有 `.zip`，然后记录 checksum 并创建 Release。各容器格式的安装与卸载、签名发布行为和接收机器的首次运行警告仍是具名覆盖缺口。
+Connection、模块注册表、loader fallback、Session 日志控制器、关停控制器与更新控制器测试覆盖选择、序列化、流、取消、可选 Web 服务器、解析、原生保存、有界且由调用方持有的 teardown、更新策略和显式安装委托。无密钥的组装 Web replay 继续覆盖被复用的 UI 组合。打包脚本会检查对应平台必需的分发文件与更新元数据。`scripts/smoke-desktop.ts` 会启动当前平台组装后的应用，通过随机 loopback Chromium 调试 endpoint 等待完全组合的 `dsh://app/` renderer，检查可见内容与更新桥，并使用有界终止阶梯完成清理。原生工作流 job 会针对四个发布目标重复该构建与冒烟测试；仅标签运行的发布 job 会校验稳定标签、必需数量与 feed 引用，只上传具名产物集合，并在发布前拒绝远端产物名称不匹配或已有的公开 Release。各容器格式的安装与卸载、两个公开 Release 之间的端到端更新，以及接收机器的信任提示仍是具名覆盖缺口。
 
 ## Alternatives considered
 
@@ -44,6 +44,6 @@ Connection、模块注册表、loader fallback 与 Session 日志控制器测试
 
 ## Consequences
 
-仓库现在能够生成零端口桌面应用及可分享的 `.dmg`、`.exe` 和 `.tar.gz` 产物，其 UI 与 Host 语义和浏览器产品保持一致。平台专用代码被限制在应用组装、IPC 传输、原生对话框和分发元数据；共享 API、重连行为、设置与模型提供方支持仍各有单一 owner。
+仓库能够生成零端口桌面应用及可分享的 `.dmg`、`.zip`、`.exe` 和 `.tar.gz` 产物，其 UI 与 Host 语义和浏览器产品保持一致。正式标签构建会建立经过校验的 Mac 与 Windows 更新通道，而不会给浏览器组合加入更新行为；是否具有证书支持的发布者身份取决于显式选择的 Release 模式。平台专用代码被限制在应用组装、IPC 传输、原生对话框、更新器 owner 与分发元数据；共享 API、重连行为、设置与模型提供方支持仍各有单一 owner。
 
-代价是一组体积较大、未签名且可能触发操作系统信任警告的产物，以及彼此独立的原生 CI job 和缺失的 Mac universal 构建。Unary IPC 传输会在两个进程中占用内存，可移植打包仍需要显式 workspace peer 闭包，且 patch 文件 HMR 仍不可用。未来的签名发布通道还需要证书、notarization 与更新策略；当前无证书分发不会隐式提供这些能力。
+代价是一组体积较大的非打包目录应用、彼此独立的原生 CI job、缺失的 Mac universal 构建，以及 Linux 压缩包没有原地更新器。无证书 Release 可能触发 Gatekeeper 或 SmartScreen 警告；signed Release 还需要长期管理的签名凭据。Unary IPC 传输会在两个进程中占用内存，可移植打包仍需要显式 workspace peer 闭包，patch 文件 HMR 仍不可用，Release 发布还必须等待全部平台与精确产物校验步骤。

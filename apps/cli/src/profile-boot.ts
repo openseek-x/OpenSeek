@@ -27,6 +27,7 @@ import {
   loadProfile,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
+  type FailLoudProcess,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -36,7 +37,11 @@ const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', im
 
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
+import {
+  createCallerOwnedShutdown,
+  createProcessShutdown,
+  type ApplicationShutdown,
+} from './process-shutdown.ts'
 
 const NAME = 'dsh'
 
@@ -170,6 +175,42 @@ function composeProfile(
   return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
 }
 
+/** Signal and final-termination ownership for {@link runProfile}. */
+export type ProfileLifecycle =
+  | {
+    /** The profile runner owns Unix signals and process completion. */
+    kind: 'process'
+  }
+  | {
+    /** The embedding application owns signals and final process termination. */
+    kind: 'caller'
+    /** Receive the bounded controller before profile boot can yield. */
+    attach: (shutdown: ApplicationShutdown) => void
+    /** Route an in-profile exit request to the embedding lifecycle. */
+    requestExit: (code: number) => void
+  }
+
+/**
+ * Install fatal-rejection handling while preserving the selected final-termination owner.
+ * @param lifecycle - final-termination owner for this profile invocation.
+ * @param proc - rejection source, diagnostic sink, and process-mode exit action.
+ * @param release - process-owned best-effort teardown before final termination.
+ * @returns the uninstaller that removes the rejection handler.
+ */
+export function installProfileFailLoud(
+  lifecycle: ProfileLifecycle,
+  proc: FailLoudProcess,
+  release: () => Promise<void> | void,
+): () => void {
+  if (lifecycle.kind === 'process') return installFailLoud(NAME, proc, release)
+  return installFailLoud(NAME, {
+    on: (event, handler) => proc.on(event, handler),
+    off: (event, handler) => proc.off(event, handler),
+    stderr: proc.stderr,
+    exit: (code) => { lifecycle.requestExit(code) },
+  })
+}
+
 /** Options for {@link runProfile}. */
 export interface RunProfileOptions {
   /** This run's frozen environment snapshot, provided before any entry mounts. */
@@ -186,12 +227,8 @@ export interface RunProfileOptions {
    * out while retaining the same one-shot composition at startup.
    */
   watchConfig?: boolean
-  /**
-   * Let the shared profile runner own SIGINT/SIGTERM and process exit.
-   * Defaults to true; GUI embedders keep their native lifecycle owner while
-   * retaining the shared fail-loud rejection handler.
-   */
-  handleSignals?: boolean
+  /** Signal, exit-request, and final process owner. Defaults to the profile runner. */
+  lifecycle?: ProfileLifecycle
 }
 
 /**
@@ -216,25 +253,41 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
  */
-export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ApplicationShutdown }> {
   const composed = composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
-  const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
-  const signalShutdown = new AbortController()
-  const interrupt = (code: number): void => {
-    signalShutdown.abort()
-    shutdown.interrupt(code)
+  let publishStartingContext!: (ctx: Context | undefined) => void
+  let startingContextPublished = false
+  const startingContext = new Promise<Context | undefined>((resolveContext) => {
+    publishStartingContext = (ctx) => {
+      if (startingContextPublished) return
+      startingContextPublished = true
+      resolveContext(ctx)
+    }
+  })
+  const dispose = async (): Promise<void> => {
+    const ctx = app.current ?? await startingContext
+    await ctx?.fiber.dispose()
   }
+  const lifecycle = options.lifecycle ?? { kind: 'process' as const }
+  const processShutdown = lifecycle.kind === 'process' ? createProcessShutdown(dispose) : undefined
+  const shutdown = processShutdown ?? createCallerOwnedShutdown(dispose)
+  if (lifecycle.kind === 'caller') lifecycle.attach(shutdown)
+  const signalShutdown = new AbortController()
   // Signals own teardown throughout the startup window, not only after boot()
   // settles: an inserted provider can publish before sibling rows finish mounting.
   // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
   // surface — the launcher does not know whether the app considered its work
   // complete; SIGINT is a user interrupt and reports 130.
-  if (options.handleSignals !== false) {
+  if (processShutdown !== undefined) {
+    const interrupt = (code: number): void => {
+      signalShutdown.abort()
+      processShutdown.interrupt(code)
+    }
     process.on('SIGTERM', () => { interrupt(0) })
     process.on('SIGINT', () => { interrupt(130) })
   }
-  installFailLoud(NAME, process, async () => {
+  installProfileFailLoud(lifecycle, process, async () => {
     await app.current?.fiber.dispose()
   })
 
@@ -264,19 +317,29 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
-    app.current = hostCtx
-    // Before any config-tree entry mounts, so plugins resolve all launch-time
-    // environment values from the same immutable provenance snapshot.
-    hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-    // The command line and bounded exit request are launcher facts available
-    // to every app plugin that injects the argument snapshot.
-    provideCmdline(hostCtx, {
-      args: options.args,
-      exit: code => void shutdown.shutdown(code),
-    })
-  }, bareModuleBaseUrl)
+  let ctx: Context
+  try {
+    ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+      app.current = hostCtx
+      publishStartingContext(hostCtx)
+      // Before any config-tree entry mounts, so plugins resolve all launch-time
+      // environment values from the same immutable provenance snapshot.
+      hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+      // The command line and bounded exit request are launcher facts available
+      // to every app plugin that injects the argument snapshot.
+      provideCmdline(hostCtx, {
+        args: options.args,
+        exit: lifecycle.kind === 'caller'
+          ? lifecycle.requestExit
+          : code => void shutdown.shutdown(code),
+      })
+    }, bareModuleBaseUrl)
+  } catch (error) {
+    publishStartingContext(undefined)
+    throw error
+  }
   app.current = ctx
+  publishStartingContext(ctx)
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
   // presence and fiber state own liveness; the initial check skips a tree

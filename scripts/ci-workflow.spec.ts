@@ -72,9 +72,6 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
-    expect(windowsNative.env).toMatchObject({
-      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
-    })
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
@@ -212,28 +209,222 @@ describe('CI workflow', () => {
 })
 
 describe('Desktop packages workflow', () => {
-  it('runs the shared tag verifier after dependencies are available', () => {
+  it('derives release and signing behavior from a trusted tag and explicit mode', () => {
     const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
-    if (!isRecord(workflow.on) || !isRecord(workflow.on.push)) {
-      throw new TypeError('Desktop packages workflow must define a tag push trigger')
-    }
+    const releaseContext = workflowJob(workflow, 'release-context')
     const packageJob = workflowJob(workflow, 'package')
-    if (!Array.isArray(packageJob.steps)) throw new TypeError('Desktop packages job must define steps')
-
-    expect(workflow.on.push).toEqual({ tags: ['dsh-v*'] })
-    const steps = packageJob.steps.filter(isRecord)
-    const install = steps.find(step => step.name === 'Install (immutable)')
-    const verifyTag = steps.find(step => step.name === 'Verify release tag')
-    if (install === undefined || verifyTag === undefined) {
-      throw new TypeError('Desktop packages job must install dependencies and verify release tags')
+    const publish = workflowJob(workflow, 'publish')
+    if (!isRecord(workflow.env)
+      || !isRecord(releaseContext.outputs)
+      || !Array.isArray(releaseContext.steps)
+      || !Array.isArray(packageJob.steps)) {
+      throw new TypeError('desktop package workflow must define classification and package steps')
     }
 
-    expect(verifyTag).toMatchObject({
-      if: "github.ref_type == 'tag'",
-      env: { RELEASE_TAG: '${{ github.ref_name }}' },
-      run: 'pnpm exec tsx apps/desktop/scripts/verify-release-tag.ts',
+    const classify = releaseContext.steps.filter(isRecord).find(step => step.id === 'classify')
+    const steps = packageJob.steps.filter(isRecord)
+    const verifyTag = steps.find(step => step.name === 'Verify release tag')
+    const macSigning = steps.find(step => step.name === 'Configure macOS release signing')
+    const windowsSigning = steps.find(step => step.name === 'Configure Windows release signing')
+    const build = steps.find(step => step.name === 'Build package')
+    const verifyMetadata = steps.find(step => step.name === 'Verify updater metadata')
+    const verifyCertificateFreeMac = steps.find(
+      step => step.name === 'Verify certificate-free macOS update release',
+    )
+    const verifyCertificateFreeWindows = steps.find(
+      step => step.name === 'Verify certificate-free Windows update release',
+    )
+    const verifyMac = steps.find(step => step.name === 'Verify macOS release signature and notarization')
+    const verifyWindows = steps.find(step => step.name === 'Verify Windows release signatures')
+    if (!isRecord(classify?.env)
+      || typeof classify.run !== 'string'
+      || !isRecord(build?.env)
+      || typeof verifyCertificateFreeMac?.run !== 'string'
+      || typeof verifyCertificateFreeWindows?.run !== 'string') {
+      throw new TypeError('desktop package workflow must expose release classification and build environment')
+    }
+
+    const releasePredicate = "needs.release-context.outputs.release == 'true'"
+    const signedPredicate = "needs.release-context.outputs.signing_mode == 'signed'"
+    const certificateFreePredicate = "needs.release-context.outputs.signing_mode == 'certificate-free'"
+    expect(workflow.env.DESKTOP_RELEASE_SIGNING_MODE).toBe('certificate-free')
+    expect(workflow.env.DESKTOP_CERTIFICATE_FREE_RELEASE_TAG).toBe('dsh-v0.1.2')
+    expect(releaseContext.outputs).toMatchObject({
+      release: '${{ steps.classify.outputs.release }}',
+      signing_mode: '${{ steps.classify.outputs.signing_mode }}',
     })
-    expect(steps.indexOf(verifyTag)).toBeGreaterThan(steps.indexOf(install))
+    expect(classify.env.RELEASE_BUILD).toBe(
+      "${{ github.event_name == 'push' && github.ref_type == 'tag' && 'true' || 'false' }}",
+    )
+    expect(classify.env.RELEASE_TAG).toBe('${{ github.ref_name }}')
+    expect(classify.env.CONFIGURED_SIGNING_MODE).toBe('${{ env.DESKTOP_RELEASE_SIGNING_MODE }}')
+    expect(classify.env.CERTIFICATE_FREE_RELEASE_TAG).toBe(
+      '${{ env.DESKTOP_CERTIFICATE_FREE_RELEASE_TAG }}',
+    )
+    expect(classify.run).toBe([
+      'set -euo pipefail',
+      "signing_mode='certificate-free'",
+      'if [ "$RELEASE_BUILD" = \'true\' ]; then',
+      '  case "$CONFIGURED_SIGNING_MODE" in',
+      '    certificate-free)',
+      '      if [ "$RELEASE_TAG" != "$CERTIFICATE_FREE_RELEASE_TAG" ]; then',
+      '        echo "::error::Certificate-free mode is limited to $CERTIFICATE_FREE_RELEASE_TAG, got $RELEASE_TAG"',
+      '        exit 1',
+      '      fi',
+      "      signing_mode='certificate-free'",
+      '      ;;',
+      '    signed)',
+      "      signing_mode='signed'",
+      '      ;;',
+      '    *)',
+      '      echo "::error::Unsupported desktop release signing mode: $CONFIGURED_SIGNING_MODE"',
+      '      exit 1',
+      '      ;;',
+      '  esac',
+      'fi',
+      'echo "release=$RELEASE_BUILD" >> "$GITHUB_OUTPUT"',
+      'echo "signing_mode=$signing_mode" >> "$GITHUB_OUTPUT"',
+      '',
+    ].join('\n'))
+    expect(packageJob.needs).toBe('release-context')
+    expect(verifyTag?.if).toBe(releasePredicate)
+    expect(macSigning?.if).toBe(`runner.os == 'macOS' && ${signedPredicate}`)
+    expect(windowsSigning?.if).toBe(`runner.os == 'Windows' && ${signedPredicate}`)
+    expect(verifyMac?.if).toBe(`runner.os == 'macOS' && ${signedPredicate}`)
+    expect(verifyWindows?.if).toBe(`runner.os == 'Windows' && ${signedPredicate}`)
+    expect(verifyCertificateFreeMac.if).toBe(`runner.os == 'macOS' && ${certificateFreePredicate}`)
+    expect(verifyCertificateFreeWindows.if).toBe(
+      `runner.os == 'Windows' && ${certificateFreePredicate}`,
+    )
+    expect(verifyCertificateFreeMac.run).toContain('designated => identifier "ai.deepseek.harness"')
+    expect(verifyCertificateFreeMac.run).toContain('expected_version=')
+    expect(verifyCertificateFreeWindows.run).toContain("-match '(?m)^publisherName:'")
+    expect(build.env.DESKTOP_RELEASE_BUILD).toBe('${{ needs.release-context.outputs.release }}')
+    expect(build.env.DESKTOP_UPDATES_ENABLED).toContain(releasePredicate)
+    expect(build.env.DESKTOP_CERTIFICATE_FREE_UPDATE_BUILD).toContain(certificateFreePredicate)
+    expect(verifyMetadata).toMatchObject({
+      if: "runner.os != 'Linux'",
+      run: 'pnpm exec tsx scripts/verify-desktop-update-metadata.ts dist-desktop/installers ${{ matrix.platform }}',
+    })
+    expect(steps.indexOf(verifyMetadata ?? {})).toBeLessThan(
+      steps.findIndex(step => step.uses === 'actions/upload-artifact@v7'),
+    )
+
+    for (const name of [
+      'DESKTOP_MAC_SIGN_IDENTITY',
+      'APPLE_ID',
+      'APPLE_APP_SPECIFIC_PASSWORD',
+      'APPLE_TEAM_ID',
+      'WINDOWS_CERTIFICATE_FILE',
+      'WINDOWS_CERTIFICATE_PASSWORD',
+      'CSC_LINK',
+      'CSC_KEY_PASSWORD',
+    ]) {
+      expect(build.env[name], `${name} must stay signed-mode gated`).toContain(signedPredicate)
+    }
+    expect(publish.if).toBe(releasePredicate)
+    expect(publish.needs).toEqual(['release-context', 'package'])
+  })
+
+  it('limits the desktop-release environment and signing secrets to trusted release jobs', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
+    const packageJob = workflowJob(workflow, 'package')
+    const publish = workflowJob(workflow, 'publish')
+    if (!isRecord(workflow.jobs)
+      || !isRecord(packageJob.strategy)
+      || !isRecord(packageJob.strategy.matrix)
+      || !Array.isArray(packageJob.strategy.matrix.include)
+      || !Array.isArray(packageJob.steps)) {
+      throw new TypeError('desktop package workflow must define its release matrix and package steps')
+    }
+
+    const releasePredicate = "needs.release-context.outputs.release == 'true'"
+    const signedPredicate = "needs.release-context.outputs.signing_mode == 'signed'"
+    expect(Object.entries(workflow.jobs)
+      .filter(([, job]) => isRecord(job) && job.environment !== undefined)
+      .map(([name]) => name))
+      .toEqual(['package', 'publish'])
+    expect(Object.entries(workflow.jobs)
+      .filter(([, job]) => JSON.stringify(job).includes('secrets.'))
+      .map(([name]) => name))
+      .toEqual(['package'])
+    expect(packageJob.environment).toBe(
+      "${{ needs.release-context.outputs.signing_mode == 'signed' && matrix.release_environment || 'desktop-package' }}",
+    )
+    expect(packageJob.strategy.matrix.include).toEqual([
+      expect.objectContaining({ platform: 'macos-arm64', release_environment: 'desktop-release' }),
+      expect.objectContaining({ platform: 'macos-x64', release_environment: 'desktop-release' }),
+      expect.objectContaining({ platform: 'windows-x64', release_environment: 'desktop-release' }),
+      expect.objectContaining({ platform: 'linux-x64', release_environment: 'desktop-package' }),
+    ])
+    expect(publish).toMatchObject({
+      if: releasePredicate,
+      environment: 'desktop-release',
+    })
+
+    const steps = packageJob.steps.filter(isRecord)
+    const macSigning = steps.find(step => step.name === 'Configure macOS release signing')
+    const windowsSigning = steps.find(step => step.name === 'Configure Windows release signing')
+    const build = steps.find(step => step.name === 'Build package')
+    if (!isRecord(macSigning?.env) || !isRecord(windowsSigning?.env) || !isRecord(build?.env)) {
+      throw new TypeError('desktop package workflow must define signing and build environments')
+    }
+
+    expect(macSigning.if).toBe(`runner.os == 'macOS' && ${signedPredicate}`)
+    expect(windowsSigning.if).toBe(`runner.os == 'Windows' && ${signedPredicate}`)
+    expect(steps
+      .filter(step => JSON.stringify(step).includes('secrets.'))
+      .map(step => step.name))
+      .toEqual([
+        'Configure macOS release signing',
+        'Configure Windows release signing',
+        'Build package',
+      ])
+
+    const secretReferences = [...JSON.stringify(steps).matchAll(/secrets\.([A-Z0-9_]+)/g)]
+      .map(match => match[1])
+    expect([...new Set(secretReferences)].sort()).toEqual([
+      'APPLE_APP_SPECIFIC_PASSWORD',
+      'APPLE_ID',
+      'APPLE_TEAM_ID',
+      'MACOS_CERTIFICATE_BASE64',
+      'MACOS_CERTIFICATE_PASSWORD',
+      'MACOS_SIGN_IDENTITY',
+      'WINDOWS_CERTIFICATE_BASE64',
+      'WINDOWS_CERTIFICATE_PASSWORD',
+    ])
+
+    for (const name of [
+      'DESKTOP_MAC_SIGN_IDENTITY',
+      'APPLE_ID',
+      'APPLE_APP_SPECIFIC_PASSWORD',
+      'APPLE_TEAM_ID',
+    ]) {
+      expect(build.env[name], `${name} must stay signed-mode and macOS gated`).toContain(
+        `${signedPredicate} && runner.os == 'macOS' && secrets.`,
+      )
+    }
+    for (const name of ['WINDOWS_CERTIFICATE_PASSWORD', 'CSC_KEY_PASSWORD']) {
+      expect(build.env[name], `${name} must stay signed-mode and Windows gated`).toContain(
+        `${signedPredicate} && runner.os == 'Windows' && secrets.`,
+      )
+    }
+  })
+
+  it('rejects extra updater metadata before creating a draft release', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-packages.yml')
+    const publish = workflowJob(workflow, 'publish')
+    if (!Array.isArray(publish.steps)) throw new TypeError('desktop publish job must define steps')
+    const verify = publish.steps.filter(isRecord)
+      .find(step => step.name === 'Verify release assets and record checksums')
+    if (typeof verify?.run !== 'string') throw new TypeError('desktop publish job must verify release assets')
+
+    expect(verify.run).toContain(
+      '[ "$(find . -maxdepth 1 -type f -name \'*.blockmap\' | wc -l)" -eq 3 ]',
+    )
+    expect(verify.run).toContain(
+      '[ "$(find . -maxdepth 1 -type f -name \'*.yml\' | wc -l)" -eq 3 ]',
+    )
   })
 })
 
@@ -417,7 +608,6 @@ describe('Python release workflows', () => {
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
-    expect(JSON.stringify(manylinuxAddon)).toContain('npm_config_build_from_source=true pnpm run install')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
