@@ -22,8 +22,8 @@ export interface NativeWindowDragOwner {
   isDestroyed: () => boolean
   /** @returns Whether the operating system currently permits moving this window. */
   isMovable: () => boolean
-  /** @returns Current native-window coordinates as `[x, y]`. */
-  getPosition: () => [number, number]
+  /** @returns Current native-window coordinates with horizontal and vertical entries. */
+  getPosition: () => readonly number[]
   /** @param x - New horizontal native-window coordinate. @param y - New vertical native-window coordinate. */
   setPosition: (x: number, y: number) => void
 }
@@ -79,6 +79,7 @@ export class WindowDragController {
   start(owner: NativeWindowDragOwner, value: unknown): void {
     if (!isWindowDragPoint(value) || owner.isDestroyed() || !owner.isMovable()) return
     const [x, y] = owner.getPosition()
+    if (x === undefined || y === undefined) return
     this.active = { owner, state: startWindowDrag({ x, y }, value) }
   }
 

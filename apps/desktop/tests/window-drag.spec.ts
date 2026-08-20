@@ -80,6 +80,7 @@ describe('desktop window-drag coordinates', () => {
     const controller = new WindowDragController()
     const invalid = nativeWindow()
     const fixed = nativeWindow({ isMovable: () => false })
+    const positionless = nativeWindow({ getPosition: () => [] })
 
     controller.start(invalid.owner, { screenX: Number.NaN, screenY: 20 })
     controller.move(invalid.owner, { screenX: 90, screenY: 80 })
@@ -88,6 +89,10 @@ describe('desktop window-drag coordinates', () => {
     controller.start(fixed.owner, { screenX: 10, screenY: 20 })
     controller.move(fixed.owner, { screenX: 90, screenY: 80 })
     expect(fixed.position()).toEqual({ x: 100, y: 200 })
+
+    controller.start(positionless.owner, { screenX: 10, screenY: 20 })
+    controller.move(positionless.owner, { screenX: 90, screenY: 80 })
+    expect(positionless.position()).toEqual({ x: 100, y: 200 })
   })
 })
 
