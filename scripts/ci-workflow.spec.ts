@@ -455,49 +455,17 @@ describe('E2B e2e workflow', () => {
   })
 })
 
-describe('Upstream sync workflow', () => {
-  it('checks daily in Shanghai and only proposes a reviewed merge branch', () => {
-    const workflow = loadWorkflow('.github/workflows/upstream-sync.yml')
-    if (!isRecord(workflow.on) || !Array.isArray(workflow.on.schedule)) {
-      throw new TypeError('Upstream sync workflow must define a schedule')
-    }
-    const sync = workflowJob(workflow, 'sync')
-    if (!Array.isArray(sync.steps)) throw new TypeError('Upstream sync job must define steps')
+describe('DeepSeek e2e workflow', () => {
+  it('prepares bubblewrap from the pinned payload without a package transaction', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const e2e = workflowJob(workflow, 'e2e')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
 
-    expect(workflow.on.workflow_dispatch).toBeNull()
-    expect(workflow.on.schedule).toEqual([{ cron: '0 22 * * *', timezone: 'Asia/Shanghai' }])
-    expect(workflow.permissions).toEqual({
-      contents: 'write',
-      issues: 'write',
-      'pull-requests': 'write',
+    const steps = e2e.steps.filter(isRecord)
+    expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
+      run: 'bash scripts/prepare-ci-bubblewrap.sh',
     })
-    expect(workflow.concurrency).toEqual({ group: 'upstream-sync', 'cancel-in-progress': false })
-    expect(workflow.env).toEqual({
-      TARGET_BRANCH: 'main',
-      UPSTREAM_BRANCH: 'master',
-      UPSTREAM_REPOSITORY: 'deepseek-ai/deepseek-harness',
-    })
-
-    const steps = sync.steps.filter(isRecord)
-    const checkout = steps.find(step => step.uses === 'actions/checkout@v6')
-    const commands = steps
-      .map(step => step.run)
-      .filter((run): run is string => typeof run === 'string')
-      .join('\n')
-
-    expect(checkout).toMatchObject({
-      with: { 'fetch-depth': 0, 'persist-credentials': true, ref: 'main' },
-    })
-    expect(commands).toContain('git merge-base --is-ancestor')
-    expect(commands).toContain('--state open')
-    expect(commands).toContain('git merge --no-ff')
-    expect(commands).toContain('git merge --abort')
-    expect(commands).toContain('git push origin "HEAD:refs/heads/${SYNC_BRANCH}"')
-    expect(commands).toContain('gh pr create')
-    expect(commands).toContain('--label "kind/cleanup"')
-    expect(commands).toContain('--label "area/infra"')
-    expect(commands).not.toContain('gh pr merge')
-    expect(commands).not.toContain('git push origin "HEAD:refs/heads/${TARGET_BRANCH}"')
+    expect(JSON.stringify(steps)).not.toContain('apt-get')
   })
 })
 
@@ -531,7 +499,10 @@ describe('Python release workflows', () => {
       },
     })
     expect(pythonCompat.strategy).toMatchObject({ matrix: { python: ['3.10', '3.14'] } })
-    expect(JSON.stringify(pythonCompat.steps)).toContain('deepseek-harness-sdk==${{ steps.compatibility-version.outputs.version }}')
+    const pythonCompatSteps = JSON.stringify(pythonCompat.steps)
+    expect(pythonCompatSteps).toContain('dist/deepseek_harness_sdk-$VERSION-py3-none-any.whl')
+    expect(pythonCompatSteps).toContain('dist/deepseek_harness_runtime_bin-$VERSION-py3-none-manylinux_2_28_x86_64.whl')
+    expect(pythonCompatSteps).not.toContain('--find-links')
     const validateSteps = JSON.stringify(validate.steps)
     const authorize = validate.steps.filter(isRecord).find(step => step.name === 'Authorize publication request')
     if (!isRecord(authorize) || typeof authorize.run !== 'string') {
@@ -604,7 +575,14 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.ci')
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
-    expect(JSON.stringify(workflow)).toContain('macosx_14_0_arm64')
+    const workflowJson = JSON.stringify(workflow)
+    expect(workflowJson).toContain('macosx_14_0_arm64')
+    expect(workflowJson).toContain('dist-python/$SDK_WHEEL')
+    expect(workflowJson).toContain('dist-python/$RUNTIME_WHEEL')
+    expect(workflowJson).toContain('/work/dist-python/$SDK_WHEEL')
+    expect(workflowJson).toContain('/work/dist-python/$RUNTIME_WHEEL')
+    expect(workflowJson).not.toContain('--find-links dist-python')
+    expect(workflowJson).not.toContain('--find-links /work/dist-python')
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')

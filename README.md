@@ -20,7 +20,7 @@ Install `Node.js`, then run:
 npx @deepseek-ai/dsh web
 ```
 
-The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
+The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
 
 ### Run from source
 
@@ -34,6 +34,8 @@ pnpm run build
 pnpm dsh web
 ```
 
+`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
+
 On macOS, Windows, and Linux, the same checkout also provides an Electron application:
 
 ```sh
@@ -42,7 +44,7 @@ pnpm run package:desktop
 pnpm run test:desktop:packaged
 ```
 
-The package command builds for the current host and architecture, writing a `.dmg` on macOS, an `.exe` installer on Windows, or a `.tar.gz` archive on Linux under `dist-desktop/installers/`. Each packaged application also contains a self-contained, version-matched [`dsh` companion](apps/desktop/README.md#companion-cli) for profile and plugin management. See the desktop application reference for CI targets, unsigned-distribution behavior, transport, security posture, and model-provider support.
+The package command builds for the current host and architecture, writing a `.dmg` on macOS, an `.exe` installer on Windows, or a `.tar.gz` archive on Linux under `dist-desktop/installers/`. Each packaged application also contains a version-matched [`dsh` companion](apps/desktop/README.md#companion-cli) for profile and plugin management. See the [desktop application reference](apps/desktop/README.md) for CI targets, unsigned-distribution behavior, transport, security posture, and model-provider support.
 
 ## Community and support
 
