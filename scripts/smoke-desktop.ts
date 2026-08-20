@@ -256,7 +256,8 @@ try {
     )
     if (typeof current !== 'string') return undefined
     const state = JSON.parse(current) as { title?: unknown; body?: unknown }
-    const hasApplicationTitle = state.title === 'DeepSeek Harness'
+    const hasApplicationTitle = state.title === 'DSH Local Build'
+      || state.title === 'DeepSeek Harness'
       || (typeof state.title === 'string' && state.title.endsWith(' — DeepSeek Harness'))
     return hasApplicationTitle
       && typeof state.body === 'string'

@@ -20,7 +20,7 @@ describe('DesktopApiClient', () => {
         body: responseBody({
           type: 'server-response',
           rpcId: envelope.rpcId,
-          result: { ok: true, value: { version: 'test', cwd: '/tmp', attachedSessions: 0, canOpenPath: true } },
+          result: { ok: true, value: { version: 'test', cwd: '/tmp', attachedSessions: 0, home: '/home/test', canOpenPath: true } },
         }),
       }
     })
@@ -35,7 +35,7 @@ describe('DesktopApiClient', () => {
 
     expect(response.result).toEqual({
       ok: true,
-      value: { version: 'test', cwd: '/tmp', attachedSessions: 0, canOpenPath: true },
+      value: { version: 'test', cwd: '/tmp', attachedSessions: 0, home: '/home/test', canOpenPath: true },
     })
     expect(request).toHaveBeenCalledOnce()
     expect(request.mock.calls[0]?.[0]).toMatchObject({

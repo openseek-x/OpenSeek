@@ -150,6 +150,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
+  // The desktop update protocol is a wire-only subpath shared by Electron
+  // and the browser plugin without pulling either connection runtime face in.
+  '@deepseek-ai/dsh-client-connection': ['lib/desktop-update.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI

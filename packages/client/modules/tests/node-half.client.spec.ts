@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
@@ -309,10 +309,10 @@ describe('client bundle activation', () => {
 })
 
 describe('shared module declarations', () => {
-  it('accepts external requests and carries them onto the graph row', () => {
+  it('accepts external requests and carries them onto the graph row', async () => {
     const packageName = '@fixture/shared-declared'
     writeBuiltPackage(packageName, { external: ['react'] })
-    expect(construct([packageName]).graph().entries).toEqual([{
+    expect((await construct([packageName])).graph().entries).toEqual([{
       id: packageName,
       url: expect.stringContaining(`/plugins/${packageName}/client.js?rev=`) as unknown as string,
       rev: expect.any(String) as unknown as string,
@@ -320,18 +320,18 @@ describe('shared module declarations', () => {
     }])
   })
 
-  it('omits external when the package declares no requests', () => {
+  it('omits external when the package declares no requests', async () => {
     const packageName = '@fixture/shared-absent'
     writeBuiltPackage(packageName, {})
-    const [row] = construct([packageName]).graph().entries
+    const [row] = (await construct([packageName])).graph().entries
     expect(row).not.toHaveProperty('external')
   })
 
-  it('rejects a non-array external', () => {
+  it('rejects a non-array external', async () => {
     const packageName = '@fixture/external-not-array'
     writeBuiltPackage(packageName, { external: 'react' })
-    expect(() => construct([packageName]))
-      .toThrow(`client-modules: ${packageName} dsh.client.external must be a string array`)
+    await expect(construct([packageName]))
+      .rejects.toThrow(`client-modules: ${packageName} dsh.client.external must be a string array`)
   })
 })
 
@@ -383,19 +383,19 @@ describe('module graph order', () => {
       .toThrow('client-modules: "solo" requests module "solo" that it answers itself')
   })
 
-  it('composes the served graph in module-graph order', () => {
+  it('composes the served graph in module-graph order', async () => {
     const consumerName = '@fixture/order-consumer'
     const dependencyName = '@fixture/order-dependency'
     writeBuiltPackage(consumerName, { external: [dependencyName] })
     writeBuiltPackage(dependencyName, {})
-    expect(ids(construct([consumerName, dependencyName]).graph().entries))
+    expect(ids((await construct([consumerName, dependencyName])).graph().entries))
       .toEqual([dependencyName, consumerName])
   })
 
-  it('fails activation loud when scanned packages form a module cycle', () => {
+  it('fails activation loud when scanned packages form a module cycle', async () => {
     writeBuiltPackage('@fixture/cycle-a', { external: ['@fixture/cycle-b'] })
     writeBuiltPackage('@fixture/cycle-b', { external: ['@fixture/cycle-a'] })
-    expect(() => construct(['@fixture/cycle-a', '@fixture/cycle-b']))
-      .toThrow('module graph cycle @fixture/cycle-a -> @fixture/cycle-b -> @fixture/cycle-a')
+    await expect(construct(['@fixture/cycle-a', '@fixture/cycle-b']))
+      .rejects.toThrow('module graph cycle @fixture/cycle-a -> @fixture/cycle-b -> @fixture/cycle-a')
   })
 })

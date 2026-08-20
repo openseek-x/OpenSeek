@@ -83,6 +83,7 @@ describe('ui-desktop-update browser plugin', () => {
       component: UpdateToast,
       options: { id: 'desktop-update', order: 10 },
     })
+    before.locale.setLocale('zh')
     expect(before.locale.bind('desktop.update')('row.title')).toBe('自动更新')
     before.locale.setLocale('en')
     expect(before.locale.bind('desktop.update')('row.title')).toBe('Automatic updates')

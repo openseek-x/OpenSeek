@@ -30,5 +30,6 @@ The workflow contract is pinned by [`scripts/ci-workflow.spec.ts`](../../../../s
 - Upstream changes arrive as explicit review decisions and never alter `main` without a maintainer merge.
 - One open synchronization pull request blocks newer proposals until it is merged or closed; the next daily check then evaluates the newest official commit.
 - Conflicts require a manual synchronization branch, while a closed pull request for an unchanged upstream commit remains closed instead of being recreated daily.
+- A manual synchronization released to OpenSeek follows the [stable fork release normalization](2026-08-20-stable-fork-releases-after-upstream-sync.md); this workflow still neither publishes nor merges that branch.
 - GitHub records one workflow run per day even when no update exists, and a run scheduled for 22:00 may start later when hosted scheduling is delayed.
 - Enabling workflow-created pull requests expands what a workflow with explicit write permissions can do; read-only default permissions and the absence of approve or merge commands limit this workflow's authority.

@@ -92,7 +92,14 @@ interface Dictionary {
  * @returns discovered dictionaries, keyed by locale-bearing name.
  */
 function dictionariesIn(file: string): Dictionary[] {
-  const text = readFileSync(file, 'utf8')
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch (error) {
+    // A concurrent static check can remove its temporary source after discovery; it does not ship a dictionary.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
   // Cheap pre-filter: parsing every package source is wasteful. The pattern
   // must admit every shape `localeOf` accepts, or a file would be skipped
   // before parsing — the silent narrowing this gate exists to prevent. A bare

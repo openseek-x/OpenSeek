@@ -248,7 +248,7 @@ describe('Desktop packages workflow', () => {
     const signedPredicate = "needs.release-context.outputs.signing_mode == 'signed'"
     const certificateFreePredicate = "needs.release-context.outputs.signing_mode == 'certificate-free'"
     expect(workflow.env.DESKTOP_RELEASE_SIGNING_MODE).toBe('certificate-free')
-    expect(workflow.env.DESKTOP_CERTIFICATE_FREE_RELEASE_TAG).toBe('dsh-v0.1.2')
+    expect(workflow.env.DESKTOP_CERTIFICATE_FREE_RELEASE_TAG).toBe('dsh-v0.1.3')
     expect(releaseContext.outputs).toMatchObject({
       release: '${{ steps.classify.outputs.release }}',
       signing_mode: '${{ steps.classify.outputs.signing_mode }}',
