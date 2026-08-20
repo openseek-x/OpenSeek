@@ -6,6 +6,10 @@ Electron application for the DeepSeek Harness graphical client. The main process
 
 The built frontend and client plugin bundles are served from the secure `dsh://app/` application origin. Unary API and generic RPC requests cross a context-isolated preload bridge as structured-clone metadata and bytes; the two event channels stream chunks over the same bridge. The main process dispatches those Fetch-shaped requests through `HostConnectionService`, so the Host API remains the single implementation. Directory selection and Session-log export use native dialogs. A Desktop-only plugin adds update preferences and a non-modal update notice without changing the browser composition.
 
+## Move the window
+
+Press and drag from a non-interactive page area to move the native window. Buttons, links, form controls, selectable editors, and draggable product controls do not start a window drag. Releasing the pointer, cancelling it, or moving focus away ends the gesture.
+
 ## Run and package
 
 From the repository root:
@@ -62,7 +66,7 @@ The first release that enables this channel is a seed release and must be instal
 
 ## Security posture
 
-The renderer runs with `sandbox: true`, context isolation, Node integration disabled, denied Electron permission requests, and navigation confined to `dsh://app`. The preload exposes only request, cancellation, stream, native-save, and updater state/action operations. Every IPC request is checked against the owning window, its top-level frame, and the application origin; request URLs are confined to `dsh://app`, bodies are bounded, filenames are reduced to basenames, and updater actions are narrowed to a fixed set. The updater accepts only validated build resources and an exact HTTPS GitHub Releases URL; the renderer validates every returned state before using it. External HTTP(S) links are handed to the operating system. The desktop carrier is trusted only after these checks and never opens the Web server.
+The renderer runs with `sandbox: true`, context isolation, Node integration disabled, and navigation confined to `dsh://app`. Electron allows every non-empty permission requested by the owning top-level `dsh://app` frame and denies requests from a different window, subframe, or origin. Operating-system privacy prompts, such as camera, microphone, or screen-recording authorization, remain under operating-system control. The preload exposes only request, cancellation, stream, native-save, and updater state/action operations. It owns the non-interactive-page press-and-drag gesture without exposing it to page JavaScript. Every IPC request is checked against the owning window, its top-level frame, and the application origin; request URLs are confined to `dsh://app`, bodies are bounded, filenames are reduced to basenames, drag coordinates are finite and bounded, and updater actions are narrowed to a fixed set. The updater accepts only validated build resources and an exact HTTPS GitHub Releases URL; the renderer validates every returned state before using it. External HTTP(S) links are handed to the operating system. The desktop carrier is trusted only after these checks and never opens the Web server.
 
 The content security policy permits `unsafe-eval` because the shipped Cordis client evaluates configuration expressions. Remote scripts, embedded frames, objects, and network connections remain blocked by the other directives and the window navigation policy.
 

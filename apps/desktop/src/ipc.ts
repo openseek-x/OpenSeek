@@ -9,6 +9,9 @@ export const IPC_SAVE_DOWNLOAD = 'dsh:save-download'
 export const IPC_UPDATE_GET_STATE = 'dsh:update:get-state'
 export const IPC_UPDATE_ACTION = 'dsh:update:action'
 export const IPC_UPDATE_STATE = 'dsh:update:state'
+export const IPC_WINDOW_DRAG_START = 'dsh:window-drag:start'
+export const IPC_WINDOW_DRAG_MOVE = 'dsh:window-drag:move'
+export const IPC_WINDOW_DRAG_END = 'dsh:window-drag:end'
 
 /** Upper bound shared with the default Connection HTTP carrier. */
 export const MAX_REQUEST_BODY_BYTES = 160 * 1024 * 1024
@@ -35,6 +38,12 @@ export interface IpcDownloadRequest {
   readonly id: string
   readonly path: string
   readonly filename: string
+}
+
+/** Pointer coordinates sent from preload while moving the native application window. */
+export interface IpcWindowDragPoint {
+  readonly screenX: number
+  readonly screenY: number
 }
 
 /** Main-to-preload events for one streamed Fetch response. */

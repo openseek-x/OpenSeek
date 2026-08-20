@@ -16,14 +16,46 @@ import {
   IPC_UPDATE_ACTION,
   IPC_UPDATE_GET_STATE,
   IPC_UPDATE_STATE,
+  IPC_WINDOW_DRAG_END,
+  IPC_WINDOW_DRAG_MOVE,
+  IPC_WINDOW_DRAG_START,
   type IpcDownloadRequest,
   type IpcRequest,
   type IpcResponse,
   type IpcStreamEvent,
+  type IpcWindowDragPoint,
 } from './ipc.ts'
+import { WindowDragGesture } from './window-drag-gesture.ts'
 
 const streams = new Map<string, DesktopStreamSink>()
 const updateListeners = new Set<Parameters<DesktopUpdateBridge['onState']>[0]>()
+const WINDOW_DRAG_ZONE_ATTRIBUTE = 'data-dsh-desktop-window-drag-zone'
+const INTERACTIVE_WINDOW_DRAG_TARGET = [
+  'a[href]',
+  'area[href]',
+  'audio[controls]',
+  'button',
+  'iframe',
+  'input',
+  'label',
+  'select',
+  'summary',
+  'textarea',
+  'video[controls]',
+  '[contenteditable]:not([contenteditable="false"])',
+  '[draggable="true"]',
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '[role="radio"]',
+  '[role="slider"]',
+  '[role="switch"]',
+  '[role="tab"]',
+  '[role="treeitem"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
 let downloadSequence = 0
 
 function nextDownloadId(): string {
@@ -91,6 +123,46 @@ const updateBridge: DesktopUpdateBridge = {
     updateListeners.add(listener)
     return () => { updateListeners.delete(listener) }
   },
+}
+
+function pointOf(event: PointerEvent): IpcWindowDragPoint {
+  return { screenX: event.screenX, screenY: event.screenY }
+}
+
+function isWindowDragTarget(target: EventTarget | null): target is Element {
+  if (!(target instanceof Element)) return false
+  if (target.closest(INTERACTIVE_WINDOW_DRAG_TARGET) !== null) return false
+  return target === document.body
+    || target === document.documentElement
+    || target.closest(`[${WINDOW_DRAG_ZONE_ATTRIBUTE}]`) !== null
+}
+
+/** Install the non-interactive-page press-and-drag that moves the owning native window. */
+function installWindowDrag(): void {
+  const root = document.getElementById('root')
+  if (root === null) return
+  root.setAttribute(WINDOW_DRAG_ZONE_ATTRIBUTE, '')
+  const gesture = new WindowDragGesture({
+    start: (point) => { ipcRenderer.send(IPC_WINDOW_DRAG_START, point) },
+    move: (point) => { ipcRenderer.send(IPC_WINDOW_DRAG_MOVE, point) },
+    end: () => { ipcRenderer.send(IPC_WINDOW_DRAG_END) },
+  })
+  document.addEventListener('pointerdown', (event) => {
+    if (!event.isPrimary || event.button !== 0 || !isWindowDragTarget(event.target)) return
+    gesture.begin({ pointerId: event.pointerId, ...pointOf(event) })
+  }, true)
+  document.addEventListener('pointermove', (event) => {
+    gesture.move({ pointerId: event.pointerId, ...pointOf(event) })
+  }, true)
+  document.addEventListener('pointerup', (event) => { gesture.end(event.pointerId) }, true)
+  document.addEventListener('pointercancel', (event) => { gesture.end(event.pointerId) }, true)
+  window.addEventListener('blur', () => { gesture.cancel() })
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', installWindowDrag, { once: true })
+} else {
+  installWindowDrag()
 }
 
 contextBridge.exposeInMainWorld('dshDesktop', bridge)

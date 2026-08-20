@@ -41,12 +41,17 @@ import {
   IPC_UPDATE_ACTION,
   IPC_UPDATE_GET_STATE,
   IPC_UPDATE_STATE,
+  IPC_WINDOW_DRAG_END,
+  IPC_WINDOW_DRAG_MOVE,
+  IPC_WINDOW_DRAG_START,
   MAX_REQUEST_BODY_BYTES,
   type IpcDownloadRequest,
   type IpcRequest,
   type IpcResponse,
   type IpcStreamEvent,
 } from './ipc.ts'
+import { WindowDragController } from './window-drag.ts'
+import { desktopPermissionDecision } from './permissions.ts'
 import type { DesktopUpdateController, DesktopUpdatePreferences } from './update-controller.ts'
 import {
   createDesktopProfileLifecycle,
@@ -94,6 +99,7 @@ let connection: HostConnectionHandle | undefined
 let modules: ClientModuleRegistry | undefined
 let updates: DesktopUpdateController | undefined
 let disposeUpdateBroadcast: (() => void) | undefined
+const windowDrag = new WindowDragController()
 let quitting = false
 let finalizingQuit = false
 const profileLifecycle = createDesktopProfileLifecycle((code) => { void requestShutdown('quit', code) })
@@ -321,6 +327,27 @@ function registerIpc(updater: DesktopUpdateController): void {
       case 'open-release': return await updater.openReleases()
     }
   })
+
+  ipcMain.on(IPC_WINDOW_DRAG_START, (event, value: unknown) => {
+    if (quitting) return
+    assertRenderer(event)
+    const owner = window
+    if (owner !== undefined) windowDrag.start(owner, value)
+  })
+
+  ipcMain.on(IPC_WINDOW_DRAG_MOVE, (event, value: unknown) => {
+    if (quitting) return
+    assertRenderer(event)
+    const owner = window
+    if (owner !== undefined) windowDrag.move(owner, value)
+  })
+
+  ipcMain.on(IPC_WINDOW_DRAG_END, (event) => {
+    if (quitting) return
+    assertRenderer(event)
+    const owner = window
+    if (owner !== undefined) windowDrag.end(owner)
+  })
 }
 
 function broadcastUpdateState(updater: DesktopUpdateController): () => void {
@@ -416,8 +443,24 @@ async function serveApplication(request: Request, distIndex: string): Promise<Re
 function registerDesktopSurface(): void {
   const distIndex = resolveFrontendIndex()
   protocol.handle('dsh', request => serveApplication(request, distIndex))
-  session.defaultSession.setPermissionCheckHandler(() => false)
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { callback(false) })
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, origin, details) =>
+    desktopPermissionDecision(
+      window?.webContents,
+      webContents,
+      permission,
+      details.requestingUrl ?? origin,
+      details.isMainFrame,
+    ) === 'allow')
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const decision = desktopPermissionDecision(
+      window?.webContents,
+      webContents,
+      permission,
+      details.requestingUrl,
+      details.isMainFrame,
+    )
+    callback(decision === 'allow')
+  })
 }
 
 function createWindow(): BrowserWindow {
@@ -458,7 +501,10 @@ function createWindow(): BrowserWindow {
     event.preventDefault()
   })
   created.once('ready-to-show', () => { created.show() })
-  created.on('closed', () => { if (window === created) window = undefined })
+  created.on('closed', () => {
+    if (window === created) window = undefined
+    windowDrag.clear(created)
+  })
   void created.loadURL(APP_URL)
   return created
 }
@@ -502,6 +548,7 @@ async function bootDesktop(): Promise<void> {
 
 async function runShutdown(intent: DesktopShutdownIntent, exitCode: number): Promise<void> {
   quitting = true
+  windowDrag.clear()
   const updater = updates
   const disposeBroadcast = disposeUpdateBroadcast
   disposeUpdateBroadcast = undefined

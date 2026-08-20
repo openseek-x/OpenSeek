@@ -12,7 +12,7 @@ Status: implemented
 
 `apps/desktop` 是 Electron 应用。其主进程通过 `@deepseek-ai/dsh/profile-boot` 启动现有 `web` profile，并应用 `config/desktop.patch.yml`：禁用 Web 服务器、浏览器 startup/runtime、HMR client 和浏览器目录选择器；保留共享 Connection 与客户端模块注册表，再用原生目录选择器与自动更新条目替换或扩展浏览器组合。桌面应用不新增模型可见组合，并与 `dsh web` 使用相同的设置、凭据、Session、提供方适配器和客户端插件图。
 
-主进程从特权 `dsh://app/` origin 提供已构建前端和客户端 bundle 图，并通过客户端模块注册表的公开图 helper 注入启动 manifest。沙箱化且 context-isolated 的 renderer 不启用 Node integration。其 preload 只公开 structured-clone 请求、取消、流、原生保存以及自动更新状态／操作。
+主进程从特权 `dsh://app/` origin 提供已构建前端和客户端 bundle 图，并通过客户端模块注册表的公开图 helper 注入启动 manifest。沙箱化且 context-isolated 的 renderer 不启用 Node integration。其 preload 只公开 structured-clone 请求、取消、流、原生保存以及自动更新状态／操作。Preload 自身会识别页面非交互区域的主指针按下，并通过封闭的拖动 IPC 发送匹配的指针屏幕坐标；页面 JavaScript 不会获得窗口移动 API。主进程只有在校验 sender、origin 与有限且位于上限内的坐标后，才会移动所属且可移动的窗口；释放、取消、失焦、窗口关闭和关停都会清除手势状态。
 
 `dsh-client-connection` 持有不依赖传输的 Host Fetch 分发器。Web 组合把它投射为 `/api` 与两条 WebSocket 下行。`DesktopApiClient` 则把 Fetch 元数据和字节序列化到 Electron IPC；unary 响应以一个字节数组返回，`events.mux` 与 `events.host` 把现有 SSE 表示流式传为 IPC 分块。继承的 API parser、rpcId 规则、重连状态机和通用 RPC caller 不变。主进程会先校验所属 `webContents`、顶层 frame、`dsh://app` origin、URL authority、method、header、body 大小、原生保存文件名以及封闭的更新操作集合，再进入特权代码。浏览器 Host-header 与 origin fence 仍位于网络 route，不会在已校验的本地路径内重复执行。
 
@@ -22,11 +22,11 @@ Electron 持有 signal 与窗口关闭生命周期。因此，共享 profile boo
 
 ## Security properties
 
-桌面 origin 与网络隔离：导航保持在 `dsh://app`，Electron 权限请求全部拒绝，外部 HTTP(S) 链接通过操作系统离开应用，内容安全策略会阻止远程脚本、frame、object 与连接。仅因随附 Cordis 客户端需要求值配置表达式而保留 `unsafe-eval`。原生 Session 日志导出会在主进程中把 Host 响应流式写入用户选定文件；renderer 永远拿不到选定路径或 ZIP 字节。更新器 feed 身份来自经过校验的打包资源，renderer 消息无法替换它，Release 页面导航也只接受固定的 HTTPS GitHub 路径。
+桌面 origin 与网络隔离：导航保持在 `dsh://app`，Electron 会允许所属顶层应用 frame 的全部非空权限，并拒绝其他窗口、subframe 或 origin 的请求，外部 HTTP(S) 链接通过操作系统离开应用，内容安全策略会阻止远程脚本、frame、object 与连接。操作系统隐私授权仍由操作系统决定是否询问。仅因随附 Cordis 客户端需要求值配置表达式而保留 `unsafe-eval`。原生 Session 日志导出会在主进程中把 Host 响应流式写入用户选定文件；renderer 永远拿不到选定路径或 ZIP 字节。按住拖动窗口手势停留在 preload 内，其主进程路由只接受经过校验的顶层 `dsh://app` sender 以及有限且位于上限内的坐标。更新器 feed 身份来自经过校验的打包资源，renderer 消息无法替换它，Release 页面导航也只接受固定的 HTTPS GitHub 路径。
 
 ## Verification
 
-Connection、模块注册表、loader fallback、Session 日志控制器、关停控制器与更新控制器测试覆盖选择、序列化、流、取消、可选 Web 服务器、解析、原生保存、有界且由调用方持有的 teardown、更新策略和显式安装委托。无密钥的组装 Web replay 继续覆盖被复用的 UI 组合。打包脚本会检查对应平台必需的分发文件与更新元数据。`scripts/smoke-desktop.ts` 会启动当前平台组装后的应用，通过随机 loopback Chromium 调试 endpoint 等待完全组合的 `dsh://app/` renderer，检查可见内容与更新桥，并使用有界终止阶梯完成清理。原生工作流 job 会针对四个发布目标重复该构建与冒烟测试；仅标签运行的发布 job 会校验稳定标签、必需数量与 feed 引用，只上传具名产物集合，并在发布前拒绝远端产物名称不匹配或已有的公开 Release。各容器格式的安装与卸载、两个公开 Release 之间的端到端更新，以及接收机器的信任提示仍是具名覆盖缺口。
+Connection、模块注册表、loader fallback、Session 日志控制器、关停控制器、更新控制器、聚焦的拖动手势测试和桌面权限测试覆盖选择、序列化、流、取消、可选 Web 服务器、解析、原生保存、经过校验的拖动坐标、指针 owner、所属 frame 的权限、有界且由调用方持有的 teardown、更新策略和显式安装委托。无密钥的组装 Web replay 继续覆盖被复用的 UI 组合。打包脚本会检查对应平台必需的分发文件与更新元数据。`scripts/smoke-desktop.ts` 会启动当前平台组装后的应用，通过随机 loopback Chromium 调试 endpoint 等待完全组合的 `dsh://app` renderer，检查可见内容与更新桥，并使用有界终止阶梯完成清理。原生工作流 job 会针对四个发布目标重复该构建与冒烟测试；仅标签运行的发布 job 会校验稳定标签、必需数量与 feed 引用，只上传具名产物集合，并在发布前拒绝远端产物名称不匹配或已有的公开 Release。各容器格式的安装与卸载、两个公开 Release 之间的端到端更新，以及接收机器的信任提示仍是具名覆盖缺口。
 
 ## Alternatives considered
 

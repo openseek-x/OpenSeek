@@ -6,6 +6,10 @@ DeepSeek Harness 图形客户端的 Electron 应用。主进程在进程内启�
 
 构建后的前端与客户端插件 bundle 由安全的 `dsh://app/` 应用 origin 提供。Unary API 与通用 RPC 请求以 structured-clone 元数据和字节穿过 context-isolated preload 桥；两条事件通道通过同一桥流式传输分块。主进程把这些 Fetch 形式的请求分发给 `HostConnectionService`，因此 Host API 仍只有一份实现。目录选择与 Session 日志导出使用原生对话框。一个仅用于 Desktop 的插件会加入更新偏好设置和非模态更新提示，不改变浏览器组合。
 
+## 移动窗口
+
+在页面的非交互区域按住后直接拖动，即可移动原生窗口。按钮、链接、表单控件、可选取的编辑器和产品内可拖动控件不会启动窗口拖动。松开或取消指针、或失去焦点都会结束该手势。
+
 ## 运行与打包
 
 在仓库根目录执行：
@@ -62,7 +66,7 @@ DeepSeek 是随附默认值，并不是唯一支持的模型系列。可在「�
 
 ## 安全姿态
 
-Renderer 以 `sandbox: true`、context isolation、禁用 Node integration、拒绝 Electron 权限请求的配置运行，且导航被限制在 `dsh://app`。Preload 只公开请求、取消、流、原生保存以及更新器状态／操作。每个 IPC 请求都会校验所属窗口、顶层 frame 和应用 origin；请求 URL 限于 `dsh://app`，body 有大小上限，文件名会收敛为 basename，更新操作则收敛为固定集合。更新器只接受经过校验的构建资源与精确的 HTTPS GitHub Releases URL；renderer 会在使用前校验每个返回状态。外部 HTTP(S) 链接交给操作系统处理。桌面载体只有通过这些校验后才被信任，且永不打开 Web 服务器。
+Renderer 以 `sandbox: true`、context isolation、禁用 Node integration 的配置运行，且导航被限制在 `dsh://app`。Electron 会允许所属顶层 `dsh://app` frame 请求的所有非空权限，来自其他窗口、subframe 或 origin 的请求全部拒绝。摄像头、麦克风、屏幕录制等操作系统隐私授权仍由操作系统决定是否询问。Preload 只公开请求、取消、流、原生保存以及更新器状态／操作；它自身负责非交互页面按住拖动手势，不向页面 JavaScript 公开该能力。每个 IPC 请求都会校验所属窗口、顶层 frame 和应用 origin；请求 URL 限于 `dsh://app`，body 有大小上限，文件名会收敛为 basename，拖动坐标必须有限且位于上限内，更新操作则收敛为固定集合。更新器只接受经过校验的构建资源与精确的 HTTPS GitHub Releases URL；renderer 会在使用前校验每个返回状态。外部 HTTP(S) 链接交给操作系统处理。桌面载体只有通过这些校验后才被信任，且永不打开 Web 服务器。
 
 内容安全策略允许 `unsafe-eval`，因为随附 Cordis 客户端需要求值配置表达式。其他 directive 与窗口导航策略仍会阻止远程脚本、嵌入 frame、object 和网络连接。
 
