@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-桌面工作流会在版本控制中把封闭的 `DESKTOP_RELEASE_SIGNING_MODE` 声明为 `certificate-free` 或 `signed`。其当前值为 `certificate-free`，`DESKTOP_CERTIFICATE_FREE_RELEASE_TAG` 会把发布绑定到经过审查的 `dsh-v0.1.3` 标签；其他 Release 标签会在分类阶段失败。手动运行使用无证书打包，但绝不会发布。后续 Release 改用 `signed` 必须显式修改源码，不能由缺少 secret 触发。本决策临时取代[桌面自动更新决策](../feature/2026-08-14-desktop-automatic-updates.md)中的平台证书要求。
+桌面工作流会在版本控制中把封闭的 `DESKTOP_RELEASE_SIGNING_MODE` 声明为 `certificate-free` 或 `signed`。其当前值为 `certificate-free`，`DESKTOP_CERTIFICATE_FREE_RELEASE_TAG` 会把发布绑定到经过审查的 `dsh-v0.1.3` 标签；其他 Release 标签会在分类阶段失败。手动运行使用无证书打包，但绝不会发布。后续 Release 改用 `signed` 必须显式修改源码，不能由缺少 secret 触发。本决策临时取代[桌面自动更新决策](../feature/2026-08-14-desktop-automatic-updates.zh.md)中的平台证书要求。
 
 无证书 Mac 与 Windows 打包 job 使用不含 secret 的 `desktop-package` Environment。最终发布 job 仍绑定 `desktop-release`，请求 `contents: write`，不引用任何签名 secret，且 `0.1.3` 不要求人工审批。标签仍必须匹配稳定的桌面 manifest 版本。发布流程仍会等待两个 Mac 架构、Windows x64 与 Linux x64 全部完成，校验准确的更新元数据与产物集合，上传到草稿，并且只在全部上传成功后把草稿公开。工作流模式改成 `signed` 前，需要在 `desktop-release` 上配置 required reviewers、受保护标签 deployment rule 与签名 secret；届时 signed 模式的 Mac 与 Windows 打包 job 会选择该 Environment。
 

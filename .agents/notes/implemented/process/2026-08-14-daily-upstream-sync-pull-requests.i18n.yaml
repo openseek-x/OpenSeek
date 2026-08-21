@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-14-daily-upstream-sync-pull-requests.md
 2026-08-14-daily-upstream-sync-pull-requests.md: 536980eaaea87117907981af12f494aaa9f051ca
-2026-08-14-daily-upstream-sync-pull-requests.zh.md: eeae872a351fa2b2d23bae2ede3c213e1dd36d31
+2026-08-14-daily-upstream-sync-pull-requests.zh.md: 799d1e5f26e285c69962f1af127b436282189851

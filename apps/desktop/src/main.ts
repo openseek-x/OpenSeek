@@ -29,7 +29,8 @@ import {
 } from '@deepseek-ai/dsh-client-connection/desktop-update'
 import { runProfile, type RunProfileOptions } from '@deepseek-ai/dsh/profile-boot'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
-import { injectBootManifest, type ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
+import { bootInjections, type ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
+import { renderIndexInjections } from '@deepseek-ai/dsh-host-webserver'
 import { settingsNamespace, type SettingsProvider } from '@deepseek-ai/dsh-settings'
 import {
   IPC_FETCH,
@@ -436,7 +437,10 @@ async function serveApplication(request: Request, distIndex: string): Promise<Re
     const file = await fileResponse(candidate, request.method)
     if (file !== undefined) return file
   }
-  const html = injectBootManifest(await readFile(distIndex, 'utf8'), modules?.graph() ?? { rev: '', entries: [] })
+  const html = renderIndexInjections(
+    await readFile(distIndex, 'utf8'),
+    bootInjections(modules?.graph() ?? { rev: '', entries: [] }),
+  )
   return new Response(request.method === 'HEAD' ? null : html, { headers: responseHeaders('text/html; charset=utf-8') })
 }
 

@@ -11,13 +11,13 @@
 | `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh web` | `--profile web` 的别名。 |
-| `dsh plugin --profile <name> <pnpm args>` | 在 profile 目录中通过 CLI 锁定版本的 pnpm 管理该 profile 的插件。 |
+| `dsh plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
 
 运行命令时所在的目录将作为默认 workspace 根目录。`web` 和 `headless` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `dsh plugin` 创建。
 
 ## 应用参数
 
-启动器只解析自身的 flag，并将其后的所有内容交给已启动的 profile；注入该 profile 的任意应用插件都可以解析这份共享的不可变快照（[`dsh-cmdline`](../../packages/boot/cmdline/README.md)）。因此，启动器的 flag 必须写在最前面；启动器无法识别的第一个 token 标志着应用参数的开始：
+启动器只解析自身的 flag，并将其后的所有内容交给已启动的 profile；注入该 profile 的任意应用插件都可以解析这份共享的不可变快照（[`dsh-cmdline`](../../packages/boot/cmdline/README.zh.md)）。因此，启动器的 flag 必须写在最前面；启动器无法识别的第一个 token 标志着应用参数的开始：
 
 ```sh
 dsh --profile web --port 8080       # --port belongs to the web app
@@ -26,6 +26,8 @@ dsh --profile headless "run the tests"
 dsh --profile web --help            # the web app's flags, not the launcher's
 dsh --help                          # the launcher's own help
 ```
+
+<a id="profiles"></a>
 
 ## Profile
 
@@ -38,14 +40,12 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 
-启动时，裸插件条目会先从该 profile 的 `node_modules` 解析，再从 `$DSH_HOME/profiles/node_modules` 中修复后的安装依赖闭包解析。Node 与 Electron 使用相同的 profile 锚定查找顺序，不受 workspace 提升方式或桌面打包布局影响。
-
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
 
-层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI（命令行界面）行为参考](reference/README.md)为准。
+层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI（命令行界面）行为参考](reference/README.zh.md)为准。
 
 ## 开发
 
-生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.md#source-execution)为准。
+生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.zh.md#source-execution)为准。
 
-导出的 `@deepseek-ai/dsh/profile-boot` 入口允许其他应用复用 profile 组合，而不调用 CLI 解析器。`runProfile` 默认监视 profile patch，并使用 `{ kind: 'process' }` 生命周期；当 GUI 嵌入方的 loader 无法支持配置 HMR 时可设置 `watchConfig: false`，当原生应用负责关闭时可传入 `lifecycle: { kind: 'caller', attach, requestExit }`。`attach` 会在 profile boot 可能让出执行权前收到带时间上界的关停，profile 内的 `appExit` 则会调用 `requestExit`。调用方持有的关停绝不会改变进程退出状态；启动期间的关停请求会等待 profile Context 发布后再释放它，资源释放失败或超时会向调用方 reject，把退出、失败或安装器交接的最终动作留给嵌入方。随附的嵌入方是[桌面应用](../desktop/README.md)。
+导出的 `@deepseek-ai/dsh/profile-boot` 入口允许其他应用复用 profile 组合，而不调用 CLI 解析器。`runProfile` 默认监视 profile patch 并使用 `{ kind: 'process' }` 生命周期；当 GUI 嵌入方的 loader 不支持配置 HMR 时，可设定 `watchConfig: false`，并在原生应用拥有关停时传入 `lifecycle: { kind: 'caller', attach, requestExit }`。`attach` 会在 profile boot 可能让出执行权前收到有界关停，profile 内的 `appExit` 则调用 `requestExit`。调用方拥有的关停不会改变进程退出状态；启动期间的请求会等待 profile Context 发布后再释放它，释放失败或超时会拒绝给调用方，由嵌入方处理退出、失败或安装器交接。[桌面应用](../desktop/README.zh.md)是随附的嵌入方。

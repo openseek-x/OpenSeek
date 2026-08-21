@@ -6,19 +6,22 @@ import {
   type ClientRequest,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ClientConnectionRpc } from '../rpc.ts'
-import type { ConnectionFetch } from '../rpc.ts'
 import { randomUuid } from './random-uuid.ts'
 
 const INTERNAL_BASE = 'http://dsh.internal'
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
 
+/** Transport this caller posts through; same signature as the global `fetch`. */
+export type RpcFetch = (input: URL, init: RequestInit) => Promise<Response>
+
 /**
  * Create the browser-backed generic RPC caller.
- * @param fetcher - transport used for unary channel calls.
+ * @param doFetch - transport override; defaults to the page's global fetch.
  * @returns caller that owns request correlation and response-envelope validation.
  */
-export function createWebConnectionRpc(fetcher: ConnectionFetch = (input, init) => globalThis.fetch(input, init)): ClientConnectionRpc {
+export function createWebConnectionRpc(doFetch?: RpcFetch): ClientConnectionRpc {
+  const send: RpcFetch = doFetch ?? ((input, init) => globalThis.fetch(input, init))
   return {
     async call(channel, endpoint, payload, signal) {
       assertTarget(channel, endpoint)
@@ -29,7 +32,7 @@ export function createWebConnectionRpc(fetcher: ConnectionFetch = (input, init) 
         method: endpoint,
         payload,
       }
-      const response = await fetcher(
+      const response = await send(
         new URL(`${channel}/${endpoint}`, resolveBase()),
         {
           method: 'POST',

@@ -36,6 +36,7 @@ Mac 打包还会在对应架构旁生成 `latest-arm64-mac.yml` 或 `latest-x64-
 
 从终端启动时，终端当前目录是初始 workspace。从 Finder 启动且继承的工作目录为 `/` 时，应用从用户的 Documents 目录开始；在应用内选择其他 workspace 后，会按常规方式切换活动 workspace。
 
+<a id="companion-cli"></a>
 ## 配套 CLI
 
 每个打包后的应用都包含版本匹配的 `dsh` companion：macOS 位于 `DeepSeek Harness.app/Contents/MacOS/dsh`，Windows 位于已安装应用旁的 `dsh.cmd`，Linux 位于压缩包中 `deepseek-harness` 旁的 `dsh`。该 companion 使用 Electron 内嵌的 Node 运行时启动随附 CLI，`dsh plugin` 则通过同一个可执行文件运行 CLI 锁定版本的 pnpm。私有的 `node` 与 `pnpm` shim 只对 companion 的进程树可见，其中也包括包生命周期脚本。因此，只安装桌面应用也能管理 profile 组合包，无需系统提供 Node.js 或 pnpm。
@@ -46,13 +47,13 @@ Mac 打包还会在对应架构旁生成 `latest-arm64-mac.yml` 或 `latest-x64-
 "/Applications/DeepSeek Harness.app/Contents/MacOS/dsh" plugin --profile web add package-name
 ```
 
-Companion 与桌面应用共用 `$DSH_HOME` 和 `web` profile。添加、更新或移除组合包前先退出应用，操作完成后重新打开，使新的 profile 组合生效。包生命周期脚本以用户的宿主权限运行，且位于 agent 沙箱之外；只安装可信包，具体说明见[插件打包指南](../../docs/user/develop/basic/publish.md#installing-from-github-the-build-script-catch)。分发决策及未采用的自动修改 `PATH` 方案记录在 [companion CLI Agent Note](../../.agents/notes/implemented/feature/2026-08-14-desktop-companion-cli.md)中。
+Companion 与桌面应用共用 `$DSH_HOME` 和 `web` profile。添加、更新或移除组合包前先退出应用，操作完成后重新打开，使新的 profile 组合生效。包生命周期脚本以用户的宿主权限运行，且位于 agent 沙箱之外；只安装可信包，具体说明见[插件打包指南](../../docs/user/develop/basic/publish.zh.md#installing-from-github-the-build-script-catch)。分发决策及未采用的自动修改 `PATH` 方案记录在 [companion CLI Agent Note](../../.agents/notes/implemented/feature/2026-08-14-desktop-companion-cli.zh.md)中。
 
 ## Profile、设置与模型
 
 桌面应用与 `dsh web` 共用 `web` profile 和 Harness home（`$DSH_HOME`，否则为 `~/.dsh`）。Profile 与 home 的 `cordis.patch.yml` 会在启动时参与组合，但由于 Electron 不公开配置 HMR 所用的 Node loader hook，其文件 watcher 被禁用；修改任一 patch 文件后需要重启应用。设置与凭据服务仍在组合中，因此通过「设置」进行的变更（包括模型提供方变更）仍会通过各自的实时服务生效。
 
-DeepSeek 是随附默认值，并不是唯一支持的模型系列。可在「设置」中配置休眠挂载的 `llm-pi-ai` 适配器，启用 OpenAI、Anthropic、Google、OpenRouter、Mistral、Groq、xAI 等已安装 catalog 提供方，也可以完整声明 OpenAI-compatible／自托管路由。不同提供方的认证能力不同；权威 catalog 与协议限制见 [`dsh-llm-pi-ai`](../../packages/llm/llm-pi-ai/README.md)。
+DeepSeek 是随附默认值，并不是唯一支持的模型系列。可在「设置」中配置休眠挂载的 `llm-pi-ai` 适配器，启用 OpenAI、Anthropic、Google、OpenRouter、Mistral、Groq、xAI 等已安装 catalog 提供方，也可以完整声明 OpenAI-compatible／自托管路由。不同提供方的认证能力不同；权威 catalog 与协议限制见 [`dsh-llm-pi-ai`](../../packages/llm/llm-pi-ai/README.zh.md)。
 
 ## 自动更新
 
@@ -62,7 +63,7 @@ DeepSeek 是随附默认值，并不是唯一支持的模型系列。可在「�
 
 可用 Release 不会自动下载。用户需要主动开始下载，并在进入 `ready` 后另外选择**重启并安装**。Desktop 嵌入方会传入 `lifecycle: { kind: 'caller', attach, requestExit }`：`attach` 会在 profile boot 可能让出执行权前收到带时间上界的关停，`requestExit` 则把 profile 内的 `appExit` 交给 Electron。启动期间发起的关停会等待 profile Context 发布后再释放它，并阻止余下的更新器、IPC 与窗口 bootstrap 完成注册。安装流程会先停止更新器调度并中止应用工作；本地 cleanup 失败会被报告，但后续 cleanup 与 Harness 完全停稳仍会继续。错误报告属于 best-effort，因此报告本身失败也不能中断后续 cleanup、完全停稳或原生退出。只有 cleanup 和完全停稳都成功后，主进程才会调用平台安装器。调用后，主进程会在构建时固定的 2 分钟上限内等待原生 `before-quit-for-update` 确认。Cleanup 失败、资源释放失败或完全停稳超时会阻止安装器调用；安装交接错误或确认超时会使 Electron 以非零状态退出。普通退出使用同一个关停协调器，单实例锁则防止两个桌面进程竞争更新缓存。
 
-首个启用该通道的 Release 是 seed 版本，必须手动安装；原地更新从下一个更高版本开始。回滚通过发布另一个更高的 patch 版本完成，不会启用降级。Mac 各架构使用独立更新通道，因此 x64 安装绝不会选择 arm64 产物。更新与发布不变量记录在[桌面自动更新 Agent Note](../../.agents/notes/implemented/feature/2026-08-14-desktop-automatic-updates.md)中；临时的平台真实性取舍由[无证书 Release 模式决策](../../.agents/notes/implemented/process/2026-08-15-certificate-free-desktop-release-mode.md)持有。
+首个启用该通道的 Release 是 seed 版本，必须手动安装；原地更新从下一个更高版本开始。回滚通过发布另一个更高的 patch 版本完成，不会启用降级。Mac 各架构使用独立更新通道，因此 x64 安装绝不会选择 arm64 产物。更新与发布不变量记录在[桌面自动更新 Agent Note](../../.agents/notes/implemented/feature/2026-08-14-desktop-automatic-updates.zh.md)中；临时的平台真实性取舍由[无证书 Release 模式决策](../../.agents/notes/implemented/process/2026-08-15-certificate-free-desktop-release-mode.zh.md)持有。
 
 ## 安全姿态
 

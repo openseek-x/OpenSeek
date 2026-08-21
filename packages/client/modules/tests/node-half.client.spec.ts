@@ -8,9 +8,9 @@ import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import { renderIndexInjections, type IndexInjection, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
-import { ClientModuleRegistry, injectBootManifest, orderByModuleGraph } from '../src/index.ts'
+import { ClientModuleRegistry, bootInjections, orderByModuleGraph } from '../src/index.ts'
 import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../src/client/index.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
@@ -96,9 +96,12 @@ async function construct(packageNames: string[]): Promise<ClientModuleRegistry> 
   return (await constructWithRoute(packageNames)).service
 }
 
-/** Execute the exact first inline script emitted by the Host HTML transform. */
+/** Execute the exact first inline script emitted by the Host boot rows. */
 function injectedFacade(graph: WebBootGraph): { html: string; target: ClientModuleLoaderTarget } {
-  const html = injectBootManifest('<html><head></head><body><script type="module" src="/index.js"></script></body></html>', graph)
+  const html = renderIndexInjections(
+    '<html><head></head><body><script type="module" src="/index.js"></script></body></html>',
+    bootInjections(graph),
+  )
   const source = /<head><script>([\s\S]*?)<\/script>/.exec(html)?.[1]
   if (source === undefined) throw new Error('missing injected ModuleLoader facade script')
   const window: { __ModuleLoader__?: ClientModuleLoaderTarget } = {}
@@ -122,7 +125,7 @@ describe('HTML bootstrap facade', () => {
     const facadeAt = html.indexOf('window.__ModuleLoader__=')
     const modulesAt = html.indexOf('<script src="/plugins/modules.js?rev=m"></script>')
     const runtimeAt = html.indexOf('<script src="/plugins/runtime.js?rev=r"></script>')
-    const graphAt = html.indexOf('window.__DSH_BOOT__ = ')
+    const graphAt = html.indexOf('globalThis["__DSH_BOOT__"] = ')
     const entryAt = html.indexOf('<script type="module" src="/index.js"></script>')
     expect([facadeAt, modulesAt, runtimeAt, graphAt, entryAt]).toEqual([...new Set([
       facadeAt, modulesAt, runtimeAt, graphAt, entryAt,
@@ -186,7 +189,7 @@ describe('client bundle activation', () => {
     expect(service.clientPath(packageName)).toBe(clientPath)
   })
 
-  it('registers browser routes when the Web server is provided after composition', async () => {
+  it('registers browser routes and contributes boot rows when the Web server is provided after composition', async () => {
     const packageName = '@fixture/late-web-client'
     const clientPath = writePackage(packageName)
     mkdirSync(dirname(clientPath), { recursive: true })
@@ -200,7 +203,6 @@ describe('client bundle activation', () => {
     })
     const service = new ClientModuleRegistry(ctx)
     const routes: WebRoute[] = []
-    const transforms: Array<(html: string) => string> = []
     // The service effect waits for dependent carriers even though the public overload is void.
     const removeWebServer = ctx.provide('webServer', {
       port: 0,
@@ -209,21 +211,18 @@ describe('client bundle activation', () => {
         return () => { routes.splice(routes.indexOf(route), 1) }
       },
       registerUpgrade: () => () => {},
-      tapIndex(transform: (html: string) => string) {
-        transforms.push(transform)
-        return () => { transforms.splice(transforms.indexOf(transform), 1) }
-      },
+      tapIndex: () => () => {},
     } as unknown as WebServer) as unknown as () => Promise<void>
     await service[Service.init]()
 
     expect(service.graph().entries).toMatchObject([{ id: packageName }])
     expect(routes.map(route => route.path)).toEqual(['/plugins'])
-    expect(transforms).toHaveLength(1)
-    expect(transforms[0]!('<head></head>')).toContain('window.__DSH_BOOT__')
+    const injections: IndexInjection[] = []
+    ctx.emit('webserver/index-inject', injections)
+    expect(renderIndexInjections('<head></head>', injections)).toContain('globalThis["__DSH_BOOT__"]')
 
     await removeWebServer()
     expect(routes).toHaveLength(0)
-    expect(transforms).toHaveLength(0)
   })
 
   it('allows sibling dsh roles', async () => {

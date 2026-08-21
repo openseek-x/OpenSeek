@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-15-certificate-free-desktop-release-mode.md
 2026-08-15-certificate-free-desktop-release-mode.md: 395b4499c9249e1760c67d89c5542805d780feaf
-2026-08-15-certificate-free-desktop-release-mode.zh.md: 433998d76bb07a1cd0be2741ed28d4b2e0f65a55
+2026-08-15-certificate-free-desktop-release-mode.zh.md: f5c01407a3d980712db39c5560f50d41ad42b64a
