@@ -26,36 +26,10 @@ import {
   type IpcWindowDragPoint,
 } from './ipc.ts'
 import { WindowDragGesture } from './window-drag-gesture.ts'
+import { isWindowDragTarget, WINDOW_DRAG_ZONE_ATTRIBUTE } from './window-drag-target.ts'
 
 const streams = new Map<string, DesktopStreamSink>()
 const updateListeners = new Set<Parameters<DesktopUpdateBridge['onState']>[0]>()
-const WINDOW_DRAG_ZONE_ATTRIBUTE = 'data-dsh-desktop-window-drag-zone'
-const INTERACTIVE_WINDOW_DRAG_TARGET = [
-  'a[href]',
-  'area[href]',
-  'audio[controls]',
-  'button',
-  'iframe',
-  'input',
-  'label',
-  'select',
-  'summary',
-  'textarea',
-  'video[controls]',
-  '[contenteditable]:not([contenteditable="false"])',
-  '[draggable="true"]',
-  '[role="button"]',
-  '[role="checkbox"]',
-  '[role="link"]',
-  '[role="menuitem"]',
-  '[role="option"]',
-  '[role="radio"]',
-  '[role="slider"]',
-  '[role="switch"]',
-  '[role="tab"]',
-  '[role="treeitem"]',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ')
 let downloadSequence = 0
 
 function nextDownloadId(): string {
@@ -127,14 +101,6 @@ const updateBridge: DesktopUpdateBridge = {
 
 function pointOf(event: PointerEvent): IpcWindowDragPoint {
   return { screenX: event.screenX, screenY: event.screenY }
-}
-
-function isWindowDragTarget(target: EventTarget | null): target is Element {
-  if (!(target instanceof Element)) return false
-  if (target.closest(INTERACTIVE_WINDOW_DRAG_TARGET) !== null) return false
-  return target === document.body
-    || target === document.documentElement
-    || target.closest(`[${WINDOW_DRAG_ZONE_ATTRIBUTE}]`) !== null
 }
 
 /** Install the non-interactive-page press-and-drag that moves the owning native window. */
