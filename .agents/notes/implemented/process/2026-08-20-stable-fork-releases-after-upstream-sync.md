@@ -10,9 +10,9 @@ An official DeepSeek Harness release carries the `dsh` family's prerelease versi
 
 ## Decision
 
-An upstream synchronization keeps the official tag's complete source while retaining OpenSeek's desktop application, update package, workflows, and documentation. Before publishing, the release workflow normalizes every `dsh` family member with `release:dsh` to one OpenSeek stable version. `0.1.3` is the stable release that contains official `dsh-v0.1.0-rc.8`.
+An upstream synchronization keeps the official tag's complete source while retaining OpenSeek's desktop application, update package, workflows, and documentation. Before publishing, the release workflow normalizes every `dsh` family member with `release:dsh` to one OpenSeek stable version. `0.1.4` is the stable release that contains official `dsh-v0.1.1-rc.1`.
 
-The desktop workflow keeps certificate-free mode bound to exactly one source-controlled stable tag, currently `dsh-v0.1.3`, as defined by the [certificate-free desktop release mode](2026-08-15-certificate-free-desktop-release-mode.md). A later stable release updates that tag, its workflow test, and the paired release documentation in the same source change; `signed` mode remains the path for certificate-backed publication.
+The desktop workflow keeps certificate-free mode bound to exactly one source-controlled stable tag, currently `dsh-v0.1.4`, as defined by the [certificate-free desktop release mode](2026-08-15-certificate-free-desktop-release-mode.md). A later stable release updates that tag, its workflow test, and the paired release documentation in the same source change; `signed` mode remains the path for certificate-backed publication.
 
 ## Alternatives considered
 

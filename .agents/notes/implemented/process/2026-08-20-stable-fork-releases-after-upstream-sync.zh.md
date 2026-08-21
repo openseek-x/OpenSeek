@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-上游同步保留官方标签的完整源码，同时保留 OpenSeek 的桌面应用、更新包、工作流和文档。发布前，发布流程通过 `release:dsh` 把每个 `dsh` 包族成员规范为一个 OpenSeek 稳定版本。`0.1.3` 是包含官方 `dsh-v0.1.0-rc.8` 的稳定 Release。
+上游同步保留官方标签的完整源码，同时保留 OpenSeek 的桌面应用、更新包、工作流和文档。发布前，发布流程通过 `release:dsh` 把每个 `dsh` 包族成员规范为一个 OpenSeek 稳定版本。`0.1.4` 是包含官方 `dsh-v0.1.1-rc.1` 的稳定 Release。
 
-桌面工作流仍按照[无证书桌面 Release 模式](2026-08-15-certificate-free-desktop-release-mode.zh.md)把无证书模式绑定到唯一一个由源码控制的稳定标签，目前为 `dsh-v0.1.3`。后续稳定 Release 会在同一处源码变更中更新该标签、工作流测试和成对的发布文档；`signed` 模式仍是使用证书支持的发布路径。
+桌面工作流仍按照[无证书桌面 Release 模式](2026-08-15-certificate-free-desktop-release-mode.zh.md)把无证书模式绑定到唯一一个由源码控制的稳定标签，目前为 `dsh-v0.1.4`。后续稳定 Release 会在同一处源码变更中更新该标签、工作流测试和成对的发布文档；`signed` 模式仍是使用证书支持的发布路径。
 
 ## Alternatives considered
 
