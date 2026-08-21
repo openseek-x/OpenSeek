@@ -6,7 +6,7 @@ import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
 import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -114,6 +114,22 @@ async function runCode(
     ...extras.signal ? { signal: extras.signal } : {},
   })
 }
+
+describe('ToolRuntime scheduler identity', () => {
+  it('shares its internal scheduler with another installed package copy', async () => {
+    const { tools } = await setup()
+    const scheduler = Reflect.get(tools, TOOL_RUNTIME_SCHEDULER)
+    const importedByAnotherCopy = Reflect.get(tools, Symbol.for('@deepseek-ai/dsh-tools.scheduler'))
+
+    expect(importedByAnotherCopy).toBe(scheduler)
+    expect(importedByAnotherCopy).toMatchObject({
+      prepare: expect.any(Function),
+      dispatch: expect.any(Function),
+      finalize: expect.any(Function),
+      finish: expect.any(Function),
+    })
+  })
+})
 
 describe('mode-aware wire contribution', () => {
   it("mode 'native' contributes every schema, no run_code, no SDK section — and needs no runtime", async () => {
