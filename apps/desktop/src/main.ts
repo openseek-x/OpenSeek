@@ -60,6 +60,7 @@ import {
   finalizeDesktopShutdown,
   handleDesktopSignal,
   reportDesktopFailure,
+  requestDesktopWindowClose,
   type DesktopShutdownIntent,
 } from './shutdown.ts'
 import { createDesktopUpdater } from './updater.ts'
@@ -610,7 +611,7 @@ app.on('second-instance', () => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  void requestDesktopWindowClose(requestShutdown)
 })
 
 app.on('activate', () => {

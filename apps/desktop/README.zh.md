@@ -22,6 +22,8 @@ pnpm run test:desktop:packaged
 
 `desktop` 会构建仓库并从源码启动 Electron。`package:desktop` 面向当前宿主与架构构建，在 macOS 与 Windows 上于 `dist-desktop/DeepSeek Harness-<platform>-<arch>/` 下组装独立应用，在 Linux 上则使用 `dist-desktop/DeepSeek-Harness-linux-<arch>/`，并生成对应平台的分发文件：
 
+在任一平台关闭最后一个原生窗口都会进入有序关停流程；macOS 不会把应用保留为仅在 Dock 中存在的无窗口进程。
+
 - macOS：`dist-desktop/installers/DeepSeek-Harness-<version>-mac-<arch>.dmg` 与 `.zip`
 - Windows：`dist-desktop/installers/DeepSeek-Harness-<version>-win-<arch>.exe` 及其 `.blockmap`
 - Linux：`dist-desktop/installers/DeepSeek-Harness-<version>-linux-<arch>.tar.gz`

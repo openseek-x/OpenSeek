@@ -5,6 +5,7 @@ import {
   finalizeDesktopShutdown,
   handleDesktopSignal,
   reportDesktopFailure,
+  requestDesktopWindowClose,
   type DesktopShutdownActions,
 } from '../src/shutdown.ts'
 
@@ -149,6 +150,19 @@ describe('desktop shutdown finalization', () => {
 })
 
 describe('desktop shutdown request', () => {
+  it('routes closing the final window through graceful finalization', async () => {
+    const finalization = deferred()
+    const finalize = vi.fn(() => finalization.promise)
+    const request = createDesktopShutdownRequest(finalize)
+
+    const closing = requestDesktopWindowClose(request)
+
+    expect(finalize).toHaveBeenCalledOnce()
+    expect(finalize).toHaveBeenCalledWith('quit', 0)
+    finalization.resolve()
+    await closing
+  })
+
   it('keeps the first intent while startup is still in flight', async () => {
     const finalization = deferred()
     const finalize = vi.fn(() => finalization.promise)
