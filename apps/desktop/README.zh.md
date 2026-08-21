@@ -30,9 +30,9 @@ pnpm run test:desktop:packaged
 
 Mac 打包还会在对应架构旁生成 `latest-arm64-mac.yml` 或 `latest-x64-mac.yml`，Windows x64 打包则会生成 `latest.yml`。这些文档位于禁用更新器的本地包中也不会产生影响；Linux 不生成通道文档。
 
-`test:desktop:packaged` 会启动组装后的应用，通过随机的本机 Chromium 调试端口等待完整界面组合完成，并检查可见内容、更新桥与协调关停。界面检查完成后，它会通过 `--inspect=0` 打开的、仅绑定本机回环地址的主进程 inspector 求值 `process.emit('SIGTERM')`，直接执行已注册的信号关停路径。子进程必须在 5 秒内触发 `close`，并满足 `exitCode === 0` 与 `signalCode === null`；捕获的输出还必须包含 `dsh desktop: shutdown quiesced`，该标记只会在主进程 cleanup 与 Host 完全停稳成功后写出。超时时只会使用 `SIGKILL` 清理进程，测试仍然失败。[Desktop packages](../../.github/workflows/desktop-packages.yml) 会针对 macOS arm64 与 x64、Windows x64 和 Linux x64 执行原生构建与冒烟测试，再把各安装程序或压缩包上传为工作流产物。Release 标签采用 `dsh-vX.Y.Z`，且必须与稳定的 `X.Y.Z` 桌面 manifest 版本完全一致；预发布版本会被拒绝。工作流会在版本控制中声明一个封闭的 Release 签名模式。当前模式是 `certificate-free`，另一个经过审查的标签设置会把发布限制在 `dsh-v0.1.5`；任何其他标签都会失败，直到模式或审查标签被显式修改。每个 Mac 或 Windows job 都会在上传前解析更新文档，并验证准确的产物路径、大小、SHA-512 digest 与所选签名状态。发布 job 随后校验完整的跨平台产物集合与 checksum，把它们上传到草稿 GitHub Release，并且只在所有上传成功后发布该草稿。已发布标签不可变：为其重新运行工作流会失败，而不是接受或替换现有公开 Release。手动运行使用无证书打包，只保留外层带 ZIP 且有效期为 14 天的工作流产物，不会发布 Release。
+`test:desktop:packaged` 会启动组装后的应用，通过随机的本机 Chromium 调试端口等待完整界面组合完成，并检查可见内容、更新桥与协调关停。界面检查完成后，它会通过 `--inspect=0` 打开的、仅绑定本机回环地址的主进程 inspector 求值 `process.emit('SIGTERM')`，直接执行已注册的信号关停路径。子进程必须在 5 秒内触发 `close`，并满足 `exitCode === 0` 与 `signalCode === null`；捕获的输出还必须包含 `dsh desktop: shutdown quiesced`，该标记只会在主进程 cleanup 与 Host 完全停稳成功后写出。超时时只会使用 `SIGKILL` 清理进程，测试仍然失败。[Desktop packages](../../.github/workflows/desktop-packages.yml) 会针对 macOS arm64 与 x64、Windows x64 和 Linux x64 执行原生构建与冒烟测试，再把各安装程序或压缩包上传为工作流产物。Release 标签采用 `dsh-vX.Y.Z`，且必须与稳定的 `X.Y.Z` 桌面 manifest 版本完全一致；预发布版本会被拒绝。工作流会在版本控制中声明一个封闭的 Release 签名模式。当前模式是 `certificate-free`，另一个经过审查的标签设置会把发布限制在 `dsh-v0.1.6`；任何其他标签都会失败，直到模式或审查标签被显式修改。每个 Mac 或 Windows job 都会在上传前解析更新文档，并验证准确的产物路径、大小、SHA-512 digest 与所选签名状态。发布 job 随后校验完整的跨平台产物集合与 checksum，把它们上传到草稿 GitHub Release，并且只在所有上传成功后发布该草稿。已发布标签不可变：为其重新运行工作流会失败，而不是接受或替换现有公开 Release。手动运行使用无证书打包，只保留外层带 ZIP 且有效期为 14 天的工作流产物，不会发布 Release。
 
-每个最终发布 job 都会绑定 `desktop-release`。对于无证书 `0.1.5` Release，该 Environment 不提供签名 secret，也不要求人工审批；无证书、手动与 Linux 打包 job 使用单独且不含 secret 的 `desktop-package` Environment。选择 `signed` 前，需要为 `desktop-release` 配置 required reviewers、禁止 self-review 与绕过保护规则、选定的 `dsh-v*` Tag deployment rule 以及签名 secret，并保护 `refs/tags/dsh-v*`，禁止未授权创建、更新或删除。届时 signed 模式的 Mac 与 Windows job 也会绑定 `desktop-release`。
+每个最终发布 job 都会绑定 `desktop-release`。对于无证书 `0.1.6` Release，该 Environment 不提供签名 secret，也不要求人工审批；无证书、手动与 Linux 打包 job 使用单独且不含 secret 的 `desktop-package` Environment。选择 `signed` 前，需要为 `desktop-release` 配置 required reviewers、禁止 self-review 与绕过保护规则、选定的 `dsh-v*` Tag deployment rule 以及签名 secret，并保护 `refs/tags/dsh-v*`，禁止未授权创建、更新或删除。届时 signed 模式的 Mac 与 Windows job 也会绑定 `desktop-release`。
 
 只有当工作流的 Release 签名模式为 `signed` 时，才会读取 `MACOS_CERTIFICATE_BASE64`、`MACOS_CERTIFICATE_PASSWORD`、`MACOS_SIGN_IDENTITY`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`、`WINDOWS_CERTIFICATE_BASE64` 与 `WINDOWS_CERTIFICATE_PASSWORD`；届时这些值只能作为 `desktop-release` Environment secret 存在，不得在 repository 或 organization 层级保存同名副本。Signed 模式缺少凭据时会失败，不会因此选择无证书打包。
 
@@ -59,7 +59,7 @@ DeepSeek 是随附默认值，并不是唯一支持的模型系列。可在「�
 
 ## 自动更新
 
-官方 macOS 与 Windows Release 使用 `electron-updater` 和构建时固定的 GitHub Releases 元数据。更新器会拒绝预发布版本和降级，运行时无需 GitHub token，也不允许 renderer 选择 feed 或 Release URL。无证书 `0.1.1` seed、`0.1.2`、`0.1.3` 与 `0.1.4` 后继版及 `0.1.5` Mac 应用带有稳定的 ad-hoc designated requirement `identifier "ai.deepseek.harness"`，但没有 Developer ID 身份认证或 notarization；Windows 应用与 NSIS 安装程序没有 Authenticode 签名，`app-update.yml` 也会省略 `publisherName`。因此，Gatekeeper 或 SmartScreen 仍可能向接收方发出警告，Windows 也不会为这些 Release 检查发布者身份。显式 `signed` 模式则会为 Windows 固定证书的完整 Subject，并在打包前要求 Apple 与 Windows 凭据。macOS 更新仅在应用安装于 `/Applications` 或用户的 `Applications` 目录后运行。Linux 压缩包会公开 Releases 页面，但不支持原地更新。
+官方 macOS 与 Windows Release 使用 `electron-updater` 和构建时固定的 GitHub Releases 元数据。更新器会拒绝预发布版本和降级，运行时无需 GitHub token，也不允许 renderer 选择 feed 或 Release URL。无证书 `0.1.1` seed、`0.1.2`、`0.1.3`、`0.1.4` 与 `0.1.5` 后继版及 `0.1.6` Mac 应用带有稳定的 ad-hoc designated requirement `identifier "ai.deepseek.harness"`，但没有 Developer ID 身份认证或 notarization；Windows 应用与 NSIS 安装程序没有 Authenticode 签名，`app-update.yml` 也会省略 `publisherName`。因此，Gatekeeper 或 SmartScreen 仍可能向接收方发出警告，Windows 也不会为这些 Release 检查发布者身份。显式 `signed` 模式则会为 Windows 固定证书的完整 Subject，并在打包前要求 Apple 与 Windows 凭据。macOS 更新仅在应用安装于 `/Applications` 或用户的 `Applications` 目录后运行。Linux 压缩包会公开 Releases 页面，但不支持原地更新。
 
 「设置」提供四种持久策略：`background` 会在启动 30 秒后检查，并在此后每四小时检查一次；`startup` 会在同样的延迟后检查一次；`manual` 只响应显式操作；`disabled` 不执行检查。默认值是 `background`。主进程发布封闭的 `disabled`、`idle`、`checking`、`available`、`downloading`、`ready` 与 `error` 状态；后台检查得到「已是最新版本」或失败时保持安静，手动结果与可操作的 Release 则显示在 frame overlay 和「设置」中。
 
@@ -84,7 +84,7 @@ Renderer 以 `sandbox: true`、context isolation、禁用 Node integration 的�
 ## 已知限制与暂缓事项
 
 - **本地打包仅面向本机**：一次调用只构建当前操作系统与架构。CI 会提供两个 Mac 架构以及 Windows x64 和 Linux x64，但不会生成 macOS universal 应用。
-- **`0.1.1` seed、`0.1.2`、`0.1.3`、`0.1.4` 与 `0.1.5` Release 不使用证书**：macOS 使用不带身份认证或 notarization 的稳定 ad-hoc designated requirement，Windows 则省略 Authenticode 与 `publisherName`；操作系统信任警告仍可能出现。源码中的模式与审查标签设置会显式选择 `0.1.5`，signed 模式缺少任一必需凭据时仍会失败。
+- **`0.1.1` seed、`0.1.2`、`0.1.3`、`0.1.4`、`0.1.5` 与 `0.1.6` Release 不使用证书**：macOS 使用不带身份认证或 notarization 的稳定 ad-hoc designated requirement，Windows 则省略 Authenticode 与 `publisherName`；操作系统信任警告仍可能出现。源码中的模式与审查标签设置会显式选择 `0.1.6`，signed 模式缺少任一必需凭据时仍会失败。
 - **Linux 仍仅提供通知**：`.tar.gz` 没有能安全替换运行中应用的平台安装器，因此「设置」只会链接到 GitHub Releases 页面供手动安装。
 - **Seed 版本无法凭空更新自身**：用户必须手动安装首个启用更新的版本；只有后续版本能走完整通道。
 - **生产 workspace 保持非打包目录**：macOS 与 Linux 会保留跨越虚拟存储包目录的 pnpm 相对 workspace 链接；Windows 使用 hoisted 部署，避免 NSIS 在归档时展开链接依赖图。ASAR 仍处于禁用状态，因此生成的应用会明显大于完成 bundle 优化的发布产物。

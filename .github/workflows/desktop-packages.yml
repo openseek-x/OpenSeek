@@ -20,7 +20,7 @@ env:
   # Certificate-free publication is bound to one reviewed tag. Later tags fail
   # until the mode changes to `signed` or this tag receives separate review.
   DESKTOP_RELEASE_SIGNING_MODE: 'certificate-free'
-  DESKTOP_CERTIFICATE_FREE_RELEASE_TAG: 'dsh-v0.1.5'
+  DESKTOP_CERTIFICATE_FREE_RELEASE_TAG: 'dsh-v0.1.6'
 
 jobs:
   release-context:
