@@ -506,6 +506,9 @@ function createWindow(): BrowserWindow {
     event.preventDefault()
   })
   created.once('ready-to-show', () => { created.show() })
+  created.on('close', () => {
+    void requestDesktopWindowClose(requestShutdown, quitting)
+  })
   created.on('closed', () => {
     if (window === created) window = undefined
     windowDrag.clear(created)
@@ -577,7 +580,9 @@ async function runShutdown(intent: DesktopShutdownIntent, exitCode: number): Pro
     quit: () => {
       console.log('dsh desktop: shutdown quiesced')
       finalizingQuit = true
-      app.quit()
+      // The Harness has quiesced, so avoid re-entering Electron's before-quit
+      // cycle and retaining a windowless process in the Dock.
+      app.exit(0)
     },
     exit: (code) => {
       finalizingQuit = true
@@ -611,7 +616,7 @@ app.on('second-instance', () => {
 })
 
 app.on('window-all-closed', () => {
-  void requestDesktopWindowClose(requestShutdown)
+  void requestDesktopWindowClose(requestShutdown, quitting)
 })
 
 app.on('activate', () => {

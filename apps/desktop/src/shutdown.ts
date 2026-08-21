@@ -180,9 +180,14 @@ export interface DesktopShutdownRequest {
 /**
  * Route closing the final native window into the shared desktop shutdown coordinator.
  * @param requestShutdown - coordinator that owns cleanup, Harness quiescence, and native exit.
- * @returns the shared finalization promise.
+ * @param shuttingDown - whether another event already owns finalization.
+ * @returns the shared finalization promise, or nothing when finalization is underway.
  */
-export function requestDesktopWindowClose(requestShutdown: DesktopShutdownRequest): Promise<void> {
+export function requestDesktopWindowClose(
+  requestShutdown: DesktopShutdownRequest,
+  shuttingDown = false,
+): Promise<void> | undefined {
+  if (shuttingDown) return
   return requestShutdown('quit')
 }
 

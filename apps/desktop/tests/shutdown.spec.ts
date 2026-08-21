@@ -163,6 +163,13 @@ describe('desktop shutdown request', () => {
     await closing
   })
 
+  it('does not request shutdown again while another event finalizes', () => {
+    const request = createDesktopShutdownRequest(vi.fn(async () => {}))
+
+    expect(requestDesktopWindowClose(request, true)).toBeUndefined()
+    expect(request.isRequested()).toBe(false)
+  })
+
   it('keeps the first intent while startup is still in flight', async () => {
     const finalization = deferred()
     const finalize = vi.fn(() => finalization.promise)
