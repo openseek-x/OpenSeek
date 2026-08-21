@@ -8,7 +8,7 @@ The built frontend and client plugin bundles are served from the secure `dsh://a
 
 ## Move the window
 
-Press and drag an empty page region to move the native window. Text and its containers, buttons, links, form controls, selectable editors, and draggable product controls do not start a window drag. Releasing the pointer, cancelling it, or moving focus away ends the gesture.
+Press and drag an empty page region to move the native window. Text, buttons, links, form controls, selectable editors, and draggable product controls do not start a window drag; an empty part of a container that also renders text remains draggable. Releasing the pointer, cancelling it, or moving focus away ends the gesture.
 
 ## Run and package
 

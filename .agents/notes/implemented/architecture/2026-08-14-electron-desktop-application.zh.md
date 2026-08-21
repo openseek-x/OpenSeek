@@ -12,7 +12,7 @@ Status: implemented
 
 `apps/desktop` 是 Electron 应用。其主进程通过 `@deepseek-ai/dsh/profile-boot` 启动现有 `web` profile，并应用 `config/desktop.patch.yml`：禁用 Web 服务器、浏览器 startup/runtime、HMR client 和浏览器目录选择器；保留共享 Connection 与客户端模块注册表，再用原生目录选择器与自动更新条目替换或扩展浏览器组合。桌面应用不新增模型可见组合，并与 `dsh web` 使用相同的设置、凭据、Session、提供方适配器和客户端插件图。
 
-主进程从特权 `dsh://app/` origin 提供已构建前端和客户端 bundle 图，并通过客户端模块注册表的公开图 helper 注入启动 manifest。沙箱化且 context-isolated 的 renderer 不启用 Node integration。其 preload 只公开 structured-clone 请求、取消、流、原生保存以及自动更新状态／操作。Preload 只会识别不含文字或交互控件的页面空白区域上的主指针按下，并通过封闭的拖动 IPC 发送匹配的指针屏幕坐标；页面 JavaScript 不会获得窗口移动 API。主进程只有在校验 sender、origin 与有限且位于上限内的坐标后，才会移动所属且可移动的窗口；释放、取消、失焦、窗口关闭和关停都会清除手势状态。
+主进程从特权 `dsh://app/` origin 提供已构建前端和客户端 bundle 图，并通过客户端模块注册表的公开图 helper 注入启动 manifest。沙箱化且 context-isolated 的 renderer 不启用 Node integration。其 preload 只公开 structured-clone 请求、取消、流、原生保存以及自动更新状态／操作。Preload 会识别页面空白部分上的主指针按下，拒绝文字或交互目标但保留容器的空白区域，并通过封闭的拖动 IPC 发送匹配的指针屏幕坐标；页面 JavaScript 不会获得窗口移动 API。主进程只有在校验 sender、origin 与有限且位于上限内的坐标后，才会移动所属且可移动的窗口；释放、取消、失焦、窗口关闭和关停都会清除手势状态。
 
 `dsh-client-connection` 持有不依赖传输的 Host Fetch 分发器。Web 组合把它投射为 `/api` 与两条 WebSocket 下行。`DesktopApiClient` 则把 Fetch 元数据和字节序列化到 Electron IPC；unary 响应以一个字节数组返回，`events.mux` 与 `events.host` 把现有 SSE 表示流式传为 IPC 分块。继承的 API parser、rpcId 规则、重连状态机和通用 RPC caller 不变。主进程会先校验所属 `webContents`、顶层 frame、`dsh://app` origin、URL authority、method、header、body 大小、原生保存文件名以及封闭的更新操作集合，再进入特权代码。浏览器 Host-header 与 origin fence 仍位于网络 route，不会在已校验的本地路径内重复执行。
 

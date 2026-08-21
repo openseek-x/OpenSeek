@@ -38,8 +38,14 @@ const INTERACTIVE_WINDOW_DRAG_TARGET = [
 export function isWindowDragTarget(target: EventTarget | null): target is Element {
   if (!(target instanceof Element)) return false
   if (target.closest(INTERACTIVE_WINDOW_DRAG_TARGET) !== null) return false
-  if (target.textContent?.trim() !== '') return false
+  if (hasDirectTextContent(target)) return false
   return target === document.body
     || target === document.documentElement
     || target.closest(`[${WINDOW_DRAG_ZONE_ATTRIBUTE}]`) !== null
+}
+
+/** Whether the target itself, rather than one of its children, renders selectable text. */
+function hasDirectTextContent(target: Element): boolean {
+  return [...target.childNodes].some(node =>
+    node.nodeType === Node.TEXT_NODE && node.textContent?.trim() !== '')
 }

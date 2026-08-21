@@ -14,13 +14,14 @@ function dragZone(content: string): HTMLElement {
 }
 
 describe('desktop window drag targets', () => {
-  it('accepts an empty descendant of the drag zone', () => {
-    const root = dragZone('<div id="blank"></div>')
+  it('accepts an empty part of a container whose child renders text', () => {
+    const root = dragZone('<div id="panel"><p>copy this text</p><div id="blank"></div></div>')
 
     expect(isWindowDragTarget(root.querySelector('#blank'))).toBe(true)
+    expect(isWindowDragTarget(root.querySelector('#panel'))).toBe(true)
   })
 
-  it('leaves text and its containing element available for selection', () => {
+  it('leaves a text-bearing element available for selection', () => {
     const root = dragZone('<div id="message">copy this text</div>')
 
     expect(isWindowDragTarget(root.querySelector('#message'))).toBe(false)
