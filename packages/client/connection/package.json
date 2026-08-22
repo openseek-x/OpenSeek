@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-connection",
   "description": "Wire consumer layer: HTTP-up/WebSocket-down client, ConnectionController dual streams with reconnect, and fixture api",
-  "version": "0.1.6",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -26,10 +26,6 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
-    "./desktop-update": {
-      "types": "./lib/types/desktop-update.d.ts",
-      "default": "./lib/desktop-update.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -49,7 +45,6 @@
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",
-    "lib/desktop-update.js",
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {
