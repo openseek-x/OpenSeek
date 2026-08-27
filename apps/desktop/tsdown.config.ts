@@ -24,8 +24,5 @@ export default defineConfig([
     },
     format: ['cjs'],
     fixedExtension: true,
-    // A sandboxed CommonJS preload cannot require the connection package's
-    // ESM-only wire subpath, so keep the parser inside the preload artifact.
-    noExternal: id => id === '@deepseek-ai/dsh-client-connection/desktop-update',
   },
 ])

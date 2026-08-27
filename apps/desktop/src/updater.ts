@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { app, autoUpdater as nativeAutoUpdater, shell } from 'electron'
 import electronUpdater, { type ProgressInfo, type UpdateInfo } from 'electron-updater'
-import type { DesktopUpdateDisabledReason } from '@deepseek-ai/dsh-client-connection/desktop-update'
+import type { DesktopUpdateDisabledReason } from './desktop-update.ts'
 import {
   DesktopUpdateController,
   type DesktopReleaseInfo,

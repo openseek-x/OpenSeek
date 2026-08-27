@@ -3,7 +3,7 @@ import type {
   DesktopUpdatePolicy,
   DesktopUpdateProgress,
   DesktopUpdateState,
-} from '@deepseek-ai/dsh-client-connection/desktop-update'
+} from '../src/desktop-update.ts'
 import {
   DesktopUpdateController,
   type DesktopReleaseInfo,

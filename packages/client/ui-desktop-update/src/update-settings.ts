@@ -4,14 +4,14 @@ import z from '@deepseek-ai/schemastery'
 import {
   DESKTOP_UPDATE_POLICIES,
   type DesktopUpdatePolicy,
-} from '@deepseek-ai/dsh-client-connection/desktop-update'
+} from './protocol.ts'
 
 export {
   DESKTOP_UPDATE_POLICIES,
   DESKTOP_UPDATE_SETTINGS_NAMESPACE,
   isDesktopUpdatePolicy,
   type DesktopUpdatePolicy,
-} from '@deepseek-ai/dsh-client-connection/desktop-update'
+} from './protocol.ts'
 
 /** Field carrying the selected update-check policy. */
 export const DESKTOP_UPDATE_POLICY_FIELD = 'policy'

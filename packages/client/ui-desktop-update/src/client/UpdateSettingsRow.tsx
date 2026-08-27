@@ -7,9 +7,8 @@ import {
   IconRefreshOutline16,
   Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   DEFAULT_DESKTOP_UPDATE_POLICY,
   DESKTOP_UPDATE_POLICIES,

@@ -1,100 +1,154 @@
-/** Desktop API carrier: reconstruct Fetch from a context-isolated preload bridge. */
+/** Desktop transport: reconstruct unary and Remote-stream carriers from the context-isolated preload bridge. */
 
-import { AbstractApiClient } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
-import { HOST_EVENTS_PATH, MUX_EVENTS_PATH } from '../api-path.ts'
+import type { RpcFetch, RpcStreamOpen } from './rpc.ts'
 import type {
-  ConnectionFetch,
   DesktopConnectionBridge,
   DesktopRequest,
   DesktopResponse,
+  DesktopStreamRequest,
+  DesktopStreamSink,
 } from '../rpc.ts'
 
-/** API client whose unary and streaming requests cross the context-isolated preload bridge. */
-export class DesktopApiClient extends AbstractApiClient {
-  /** Fetch-compatible desktop transport exposed to generic RPC clients. */
-  readonly fetch: ConnectionFetch = (input, init) => this.desktopFetch(input, init)
+/** Transport hooks supplied to the generic Connection browser plugin by an Electron renderer. */
+export interface DesktopTransport {
+  /** Context-isolated unary RPC carrier. */
+  readonly fetch: RpcFetch
+  /** Context-isolated, direct Host Remote-stream carrier. */
+  readonly openStream: RpcStreamOpen
+  /** The Electron main process owns the only Host instance. */
+  readonly ownsHost: true
+}
 
-  constructor(private readonly bridge: DesktopConnectionBridge) {
-    super()
-  }
-
-  protected doFetch(input: URL, init?: RequestInit): Promise<Response> {
-    return this.desktopFetch(input, init)
-  }
-
-  private async desktopFetch(input: URL, init?: RequestInit): Promise<Response> {
-    const request = await serializeRequest(input, init)
-    return isStreamPath(new URL(request.url))
-      ? this.stream(request, init?.signal ?? null)
-      : this.unary(request, init?.signal ?? null)
-  }
-
-  private async unary(request: DesktopRequest, signal: AbortSignal | null): Promise<Response> {
-    if (signal === null) return responseOf(await this.bridge.request(request))
-    throwAbortErrorIfAborted(signal)
-    const onAbort = (): void => {
-      this.bridge.cancelRequest(request.id)
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    try {
-      const response = await this.bridge.request(request)
-      throwAbortErrorIfAborted(signal)
-      return responseOf(response)
-    } finally {
-      signal.removeEventListener('abort', onAbort)
-    }
-  }
-
-  private stream(request: DesktopRequest, signal: AbortSignal | null): Promise<Response> {
-    if (signal?.aborted === true) return Promise.reject(abortError(signal))
-    return new Promise<Response>((resolve, reject) => {
-      const bridge = this.bridge
-      let opened = false
-      let controller: ReadableStreamDefaultController<Uint8Array> | undefined
-      const cleanup = (): void => { signal?.removeEventListener('abort', onAbort) }
-      const onAbort = (): void => {
-        this.bridge.cancelStream(request.id)
-        const error = abortError(signal as AbortSignal)
-        if (opened) controller?.error(error)
-        else reject(error)
-        cleanup()
-      }
-      signal?.addEventListener('abort', onAbort, { once: true })
-      this.bridge.openStream(request, {
-        opened(response) {
-          opened = true
-          const body = new ReadableStream<Uint8Array>({
-            start(next) { controller = next },
-            cancel: () => {
-              bridge.cancelStream(request.id)
-              cleanup()
-            },
-          })
-          resolve(new Response(body, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-          }))
-        },
-        data(chunk) { controller?.enqueue(chunk) },
-        end() {
-          controller?.close()
-          cleanup()
-        },
-        error(message) {
-          const error = new Error(message)
-          if (opened) controller?.error(error)
-          else reject(error)
-          cleanup()
-        },
-      })
-    })
+/**
+ * Build the browser-transport hooks for the Electron preload bridge.
+ * @param bridge - validated context-isolated desktop bridge.
+ * @returns unary and stream transports that never expose Electron APIs to page code.
+ */
+export function createDesktopTransport(bridge: DesktopConnectionBridge): DesktopTransport {
+  return {
+    fetch: (input, init) => desktopFetch(bridge, input, init),
+    openStream: (endpoint, payload, signal) => desktopStream(bridge, endpoint, payload, signal),
+    ownsHost: true,
   }
 }
 
-function isStreamPath(url: URL): boolean {
-  return url.pathname === MUX_EVENTS_PATH || url.pathname === HOST_EVENTS_PATH
+async function desktopFetch(
+  bridge: DesktopConnectionBridge,
+  input: URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const request = await serializeRequest(input, init)
+  return await unary(bridge, request, init?.signal ?? null)
+}
+
+async function unary(
+  bridge: DesktopConnectionBridge,
+  request: DesktopRequest,
+  signal: AbortSignal | null,
+): Promise<Response> {
+  if (signal === null) return responseOf(await bridge.request(request))
+  throwAbortErrorIfAborted(signal)
+  const onAbort = (): void => { bridge.cancelRequest(request.id) }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const response = await bridge.request(request)
+    throwAbortErrorIfAborted(signal)
+    return responseOf(response)
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
+async function* desktopStream(
+  bridge: DesktopConnectionBridge,
+  endpoint: string,
+  payload: unknown,
+  signal: AbortSignal,
+): AsyncGenerator<unknown> {
+  signal.throwIfAborted()
+  const request: DesktopStreamRequest = { id: randomUuid(), endpoint, payload }
+  const queue = new StreamQueue<unknown>()
+  let cancelled = false
+  const cancel = (): void => {
+    if (cancelled) return
+    cancelled = true
+    bridge.cancelStream(request.id)
+  }
+  const onAbort = (): void => {
+    cancel()
+    queue.fail(abortError(signal))
+  }
+  const sink: DesktopStreamSink = {
+    data: (value) => { queue.push(value) },
+    end: () => { queue.end() },
+    error: (message) => { queue.fail(new Error(message)) },
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    bridge.openStream(request, sink)
+    while (true) {
+      const next = await queue.next()
+      if (next.done) return
+      yield next.value
+    }
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+    cancel()
+  }
+}
+
+/** Single-consumer async queue backing one Remote-stream IPC registration. */
+class StreamQueue<T> {
+  private readonly values: T[] = []
+  private waiter: {
+    resolve(value: IteratorResult<T>): void
+    reject(reason?: unknown): void
+  } | undefined
+  private failure: unknown | undefined
+  private ended = false
+
+  push(value: T): void {
+    if (this.ended || this.failure !== undefined) return
+    const waiter = this.waiter
+    if (waiter !== undefined) {
+      this.waiter = undefined
+      waiter.resolve({ done: false, value })
+      return
+    }
+    this.values.push(value)
+  }
+
+  end(): void {
+    if (this.ended || this.failure !== undefined) return
+    this.ended = true
+    const waiter = this.waiter
+    if (waiter !== undefined) {
+      this.waiter = undefined
+      waiter.resolve({ done: true, value: undefined })
+    }
+  }
+
+  fail(error: unknown): void {
+    if (this.ended || this.failure !== undefined) return
+    this.failure = error
+    this.values.length = 0
+    const waiter = this.waiter
+    if (waiter !== undefined) {
+      this.waiter = undefined
+      waiter.reject(error)
+    }
+  }
+
+  next(): Promise<IteratorResult<T>> {
+    const value = this.values.shift()
+    if (value !== undefined) return Promise.resolve({ done: false, value })
+    if (this.failure !== undefined) return Promise.reject(this.failure)
+    if (this.ended) return Promise.resolve({ done: true, value: undefined })
+    return new Promise<IteratorResult<T>>((resolve, reject) => {
+      this.waiter = { resolve, reject }
+    })
+  }
 }
 
 function abortError(signal: AbortSignal): Error {

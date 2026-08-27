@@ -33,6 +33,13 @@ export interface IpcResponse {
   readonly body: Uint8Array
 }
 
+/** Typed Remote-stream request accepted from the isolated renderer. */
+export interface IpcStreamRequest {
+  readonly id: string
+  readonly endpoint: string
+  readonly payload: unknown
+}
+
 /** Native-download request; the main process owns both Fetch and disk I/O. */
 export interface IpcDownloadRequest {
   readonly id: string
@@ -46,9 +53,8 @@ export interface IpcWindowDragPoint {
   readonly screenY: number
 }
 
-/** Main-to-preload events for one streamed Fetch response. */
+/** Main-to-preload events for one typed Remote stream. */
 export type IpcStreamEvent =
-  | { readonly id: string; readonly kind: 'opened'; readonly status: number; readonly statusText: string; readonly headers: [string, string][] }
-  | { readonly id: string; readonly kind: 'data'; readonly chunk: Uint8Array }
+  | { readonly id: string; readonly kind: 'data'; readonly value: unknown }
   | { readonly id: string; readonly kind: 'end' }
   | { readonly id: string; readonly kind: 'error'; readonly message: string }

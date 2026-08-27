@@ -1,11 +1,14 @@
 /** Context-isolated preload: only structured-clone data and proxied callbacks cross worlds. */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopConnectionBridge, DesktopStreamSink } from '@deepseek-ai/dsh-client-connection'
+import type {
+  DesktopConnectionBridge,
+  DesktopStreamSink,
+} from '@deepseek-ai/dsh-client-connection'
 import {
   parseDesktopUpdateState,
   type DesktopUpdateBridge,
-} from '@deepseek-ai/dsh-client-connection/desktop-update'
+} from './desktop-update.ts'
 import {
   IPC_FETCH,
   IPC_FETCH_CANCEL,
@@ -20,9 +23,9 @@ import {
   IPC_WINDOW_DRAG_MOVE,
   IPC_WINDOW_DRAG_START,
   type IpcDownloadRequest,
-  type IpcRequest,
   type IpcResponse,
   type IpcStreamEvent,
+  type IpcStreamRequest,
   type IpcWindowDragPoint,
 } from './ipc.ts'
 import { WindowDragGesture } from './window-drag-gesture.ts'
@@ -41,11 +44,8 @@ ipcRenderer.on(IPC_STREAM_EVENT, (_event, payload: IpcStreamEvent) => {
   const sink = streams.get(payload.id)
   if (sink === undefined) return
   switch (payload.kind) {
-    case 'opened':
-      sink.opened({ status: payload.status, statusText: payload.statusText, headers: payload.headers })
-      break
     case 'data':
-      sink.data(payload.chunk)
+      sink.data(payload.value)
       break
     case 'end':
       streams.delete(payload.id)
@@ -74,7 +74,7 @@ const bridge: DesktopConnectionBridge = {
     const previous = streams.get(request.id)
     if (previous !== undefined) throw new Error(`duplicate desktop stream id ${request.id}`)
     streams.set(request.id, sink)
-    ipcRenderer.send(IPC_STREAM_OPEN, request satisfies IpcRequest)
+    ipcRenderer.send(IPC_STREAM_OPEN, request satisfies IpcStreamRequest)
   },
   cancelStream(id) {
     streams.delete(id)

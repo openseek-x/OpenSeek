@@ -26,7 +26,7 @@ import {
   isDesktopUpdateAction,
   isDesktopUpdatePolicy,
   type DesktopUpdatePolicy,
-} from '@deepseek-ai/dsh-client-connection/desktop-update'
+} from './desktop-update.ts'
 import { runProfile, type RunProfileOptions } from '@deepseek-ai/dsh/profile-boot'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import { bootInjections, type ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
@@ -50,6 +50,7 @@ import {
   type IpcRequest,
   type IpcResponse,
   type IpcStreamEvent,
+  type IpcStreamRequest,
 } from './ipc.ts'
 import { WindowDragController } from './window-drag.ts'
 import { desktopPermissionDecision } from './permissions.ts'
@@ -98,6 +99,10 @@ const CSP = [
 
 let window: BrowserWindow | undefined
 let connection: HostConnectionHandle | undefined
+interface DesktopWireStream {
+  open(endpoint: string, payload: unknown, signal: AbortSignal): AsyncIterable<unknown>
+}
+let wireStream: DesktopWireStream | undefined
 let modules: ClientModuleRegistry | undefined
 let updates: DesktopUpdateController | undefined
 let disposeUpdateBroadcast: (() => void) | undefined
@@ -179,6 +184,19 @@ function requestOf(value: unknown, signal: AbortSignal): Request {
   })
 }
 
+function safeStreamRequest(value: unknown): IpcStreamRequest {
+  if (typeof value !== 'object' || value === null) throw new TypeError('desktop IPC stream request must be an object')
+  const candidate = value as Record<string, unknown>
+  if (typeof candidate.id !== 'string' || candidate.id.length === 0 || candidate.id.length > 128) {
+    throw new TypeError('desktop IPC stream id is invalid')
+  }
+  if (typeof candidate.endpoint !== 'string'
+    || !/^(?:\$events|[A-Za-z0-9_$.-]+\/[A-Za-z0-9_$.-]+)$/.test(candidate.endpoint)) {
+    throw new TypeError('desktop IPC stream endpoint is invalid')
+  }
+  return { id: candidate.id, endpoint: candidate.endpoint, payload: candidate.payload }
+}
+
 function assertRenderer(event: IpcMainEvent | IpcMainInvokeEvent): void {
   const owner = window
   const frame = event.senderFrame
@@ -225,7 +243,7 @@ function registerIpc(updater: DesktopUpdateController): void {
     try {
       const active = connection
       if (active === undefined) throw new Error('desktop host is not ready')
-      return await serializeResponse(await active.fetch(requestOf(value, abort.signal)))
+      return await serializeResponse(await active.createSharedFetchHandler('/api').fetch(requestOf(value, abort.signal)))
     } finally {
       requests.delete(id)
     }
@@ -240,34 +258,31 @@ function registerIpc(updater: DesktopUpdateController): void {
   ipcMain.on(IPC_STREAM_OPEN, (event, value: unknown) => {
     if (quitting) return
     assertRenderer(event)
-    const id = typeof value === 'object' && value !== null ? (value as { id?: unknown }).id : undefined
-    if (typeof id !== 'string') return
-    if (streams.has(id)) {
-      emitStream(event, { id, kind: 'error', message: `duplicate desktop stream id ${id}` })
+    let request: IpcStreamRequest
+    try {
+      request = safeStreamRequest(value)
+    } catch (error) {
+      emitStream(event, { id: 'invalid', kind: 'error', message: messageOf(error) })
+      return
+    }
+    if (streams.has(request.id)) {
+      emitStream(event, { id: request.id, kind: 'error', message: `duplicate desktop stream id ${request.id}` })
       return
     }
     const abort = new AbortController()
-    streams.set(id, abort)
+    streams.set(request.id, abort)
     void (async () => {
       try {
-        const active = connection
-        if (active === undefined) throw new Error('desktop host is not ready')
-        const response = await active.fetch(requestOf(value, abort.signal))
-        emitStream(event, {
-          id,
-          kind: 'opened',
-          status: response.status,
-          statusText: response.statusText,
-          headers: [...response.headers.entries()],
-        })
-        if (response.body !== null) {
-          for await (const chunk of response.body) emitStream(event, { id, kind: 'data', chunk })
+        const active = wireStream
+        if (active === undefined) throw new Error('desktop Remote stream carrier is not ready')
+        for await (const item of active.open(request.endpoint, request.payload, abort.signal)) {
+          emitStream(event, { id: request.id, kind: 'data', value: item })
         }
-        emitStream(event, { id, kind: 'end' })
+        emitStream(event, { id: request.id, kind: 'end' })
       } catch (error) {
-        if (!abort.signal.aborted) emitStream(event, { id, kind: 'error', message: messageOf(error) })
+        if (!abort.signal.aborted) emitStream(event, { id: request.id, kind: 'error', message: messageOf(error) })
       } finally {
-        streams.delete(id)
+        streams.delete(request.id)
       }
     })()
   })
@@ -302,7 +317,7 @@ function registerIpc(updater: DesktopUpdateController): void {
     if (requests.has(request.id)) throw new Error(`duplicate desktop request id ${request.id}`)
     requests.set(request.id, abort)
     try {
-      const response = await active.fetch(new Request(url, { signal: abort.signal }))
+      const response = await active.createSharedFetchHandler('/api').fetch(new Request(url, { signal: abort.signal }))
       if (!response.ok || response.body === null) throw new Error(`download failed: HTTP ${String(response.status)}`)
       await pipeline(
         Readable.from(response.body as AsyncIterable<Uint8Array>),
@@ -440,7 +455,7 @@ async function serveApplication(request: Request, distIndex: string): Promise<Re
   }
   const html = renderIndexInjections(
     await readFile(distIndex, 'utf8'),
-    bootInjections(modules?.graph() ?? { rev: '', entries: [] }),
+    bootInjections(modules?.graph() ?? { rev: '', entries: [], batches: [] }),
   )
   return new Response(request.method === 'HEAD' ? null : html, { headers: responseHeaders('text/html; charset=utf-8') })
 }
@@ -538,8 +553,10 @@ async function bootDesktop(): Promise<void> {
   connection = result.ctx.get('connection')
   modules = result.ctx.get('clientModules')
   const settings = result.ctx.get('settings')
-  if (connection === undefined || modules === undefined || settings === undefined) {
-    throw new Error('desktop: Connection, clientModules, or settings failed to mount')
+  const gateway = result.ctx.get('typertGateway') as { wireStream?: DesktopWireStream } | undefined
+  wireStream = gateway?.wireStream
+  if (connection === undefined || modules === undefined || settings === undefined || wireStream === undefined) {
+    throw new Error('desktop: Connection, Remote stream carrier, clientModules, or settings failed to mount')
   }
   const updatePreferences = createUpdatePreferences(result.ctx, settings)
   const updater = await createDesktopUpdater(updatePreferences, () => requestShutdown('install'))

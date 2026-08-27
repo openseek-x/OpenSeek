@@ -1,7 +1,7 @@
 /** Browser download state shared by the Session Header button and `/export`. */
 
-import { createSnapshotStore, type SessionId, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { DesktopConnectionBridge } from '@deepseek-ai/dsh-client-connection/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Download phases presented by the shared modal. */
 export type SessionLogDownloadStatus = 'downloading' | 'success' | 'error'
@@ -20,6 +20,25 @@ export interface SessionLogDownloadState {
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 type Save = (url: string, filename: string) => void | Promise<void>
+
+/** Narrow preload contract used only for native Session export downloads. */
+interface DesktopConnectionBridge {
+  request(request: {
+    readonly id: string
+    readonly url: string
+    readonly method: string
+    readonly headers: [string, string][]
+  }): Promise<{
+    readonly status: number
+    readonly statusText: string
+    readonly headers: [string, string][]
+    readonly body: Uint8Array
+  }>
+  cancelRequest(id: string): void
+  openStream: (...args: never[]) => unknown
+  cancelStream(id: string): void
+  saveDownload(path: string, filename: string): Promise<void>
+}
 
 const INITIAL: SessionLogDownloadState = { bySession: {} }
 

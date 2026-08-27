@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DesktopUpdateClientState } from '../src/client/controller.ts'
 import { en } from '../src/client/locales.ts'
 import {
@@ -42,6 +42,7 @@ function rowProps(
   return {
     useSessions: (() => undefined) as never,
     useWorkspaces: (() => undefined) as never,
+    useSessionPendingInteraction: (() => undefined) as never,
     useUpdate: selector => selector(update),
     useUpdatePolicy: selector => selector(policy),
     t,
@@ -57,6 +58,7 @@ function toastProps(update: DesktopUpdateClientState) {
   return {
     useSessions: (() => undefined) as never,
     useWorkspaces: (() => undefined) as never,
+    useSessionPendingInteraction: (() => undefined) as never,
     useUpdate: selector => selector(update),
     t,
     check: vi.fn(),

@@ -5,7 +5,7 @@ import type {
   DesktopUpdatePolicy,
   DesktopUpdateProgress,
   DesktopUpdateState,
-} from '@deepseek-ai/dsh-client-connection/desktop-update'
+} from './desktop-update.ts'
 
 /** Read-only update policy face adapted from the generic Host settings service. */
 export interface DesktopUpdatePreferences {
