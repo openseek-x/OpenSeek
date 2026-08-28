@@ -9,6 +9,7 @@
     "src/api-path.ts",
     "src/api-request-trust.ts",
     "src/browser-auth.ts",
+    "src/desktop.ts",
     "src/http-bridge.ts",
     "src/index.ts",
     "src/invariant.ts",

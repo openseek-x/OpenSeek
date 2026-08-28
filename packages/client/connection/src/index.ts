@@ -68,6 +68,39 @@ function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): voi
   }
 }
 
+/**
+ * Create the Host Connection registry without choosing a physical carrier.
+ *
+ * Web composition subsequently mounts this registry on an HTTP route, while
+ * trusted in-process surfaces such as Electron dispatch the same Fetch handler
+ * directly. Keeping that decision outside the registry prevents a desktop
+ * build from opening a loopback server merely to satisfy the browser carrier.
+ * @param ctx - Host plugin context carrying credentials and optional attachments.
+ * @param config - resolved deployment configuration, with schema defaults when omitted.
+ * @returns the context-provided Host Connection registry.
+ */
+export async function createHostConnection(
+  ctx: Context,
+  config?: ConnectionConfig,
+): Promise<HostConnectionService> {
+  const trustedHosts = config?.trustedHosts ?? []
+  const cookieMaxAgeDays = config?.cookieMaxAgeDays ?? 30
+  const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
+  // Config boundary: a malformed entry fails the load loudly here rather than
+  // silently authorizing its hostname prefix at request time.
+  for (const entry of trustedHosts) assertTrustedAuthority(entry)
+  assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  const connection = new HostConnectionService(
+    ctx,
+    trustedHosts,
+    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
+  )
+  ctx.inject(['attachments'], (attachmentCtx) => {
+    assertImageBodyCapacity(attachmentCtx, maxRequestBodyBytes)
+  })
+  return connection
+}
+
 /** Services required before providing Connection. */
 export const inject = ['webServer', 'credentials']
 
@@ -103,18 +136,8 @@ export const Config: z<ConnectionConfig> = z.object({
  */
 export async function apply(ctx: Context, config?: ConnectionConfig): Promise<void> {
   // The Loader resolves schema defaults; hand-built test contexts may pass none.
-  const trustedHosts = config?.trustedHosts ?? []
-  const cookieMaxAgeDays = config?.cookieMaxAgeDays ?? 30
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
-  // Config boundary: a malformed entry fails the load loudly here rather than
-  // silently authorizing its hostname prefix at request time.
-  for (const entry of trustedHosts) assertTrustedAuthority(entry)
-  assertImageBodyCapacity(ctx, maxRequestBodyBytes)
-  const connection = new HostConnectionService(
-    ctx,
-    trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
-  )
+  const connection = await createHostConnection(ctx, config)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH)
   const route: WebRoute = {
     kind: 'prefix',
@@ -130,7 +153,4 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
     },
   }
   ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
-  ctx.inject(['attachments'], (attachmentCtx) => {
-    assertImageBodyCapacity(attachmentCtx, maxRequestBodyBytes)
-  })
 }

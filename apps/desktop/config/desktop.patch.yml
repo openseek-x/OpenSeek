@@ -17,14 +17,17 @@
   disabled: true
 
 - id: connection
-  inject: []
-  config:
-    trustedHosts: []
+  disabled: true
 
 - id: modules
   inject: []
 
 - insert:
+    - id: desktop-connection
+      name: '@deepseek-ai/dsh-client-connection/desktop'
+      config:
+        trustedHosts: []
+
     - id: directory-picker-desktop
       name: '@deepseek-ai/dsh-host-directory-picker-native'
 

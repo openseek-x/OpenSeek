@@ -88,4 +88,16 @@ describe('package payload constraints', () => {
       'lib/types/**/*.d.ts',
     ])
   })
+
+  it('includes a declared desktop carrier runtime subpath', () => {
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-client-connection',
+      exports: {
+        './desktop': {
+          types: './lib/types/desktop.d.ts',
+          default: './lib/desktop.js',
+        },
+      },
+    })).toContain('lib/desktop.js')
+  })
 })

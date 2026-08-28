@@ -39,11 +39,41 @@ const STARTUP_TIMEOUT_MS = 60_000
 const SHUTDOWN_TIMEOUT_MS = 5_000
 const WINDOWS_COMPANION_BUNDLE_ENV = 'DSH_DESKTOP_COMPANION_BUNDLE'
 const WINDOWS_COMPANION_EXECUTABLE_ENV = 'DSH_DESKTOP_COMPANION_EXECUTABLE'
+const PROFILE_BUNDLE_NAME = 'dsh-desktop-smoke-profile-bundle'
 
 interface DebugPage {
   title: string
   url: string
   webSocketDebuggerUrl: string
+}
+
+/** Create a profile-local bundle so the packaged Electron resolver cannot fall back to workspace links. */
+function createProfileLocalBundle(home: string): void {
+  const profileDirectory = join(home, 'profiles', 'web')
+  const bundleDirectory = join(profileDirectory, 'node_modules', PROFILE_BUNDLE_NAME)
+  mkdirSync(bundleDirectory, { recursive: true })
+  writeFileSync(join(profileDirectory, 'package.json'), `${JSON.stringify({
+    name: 'dsh-desktop-smoke-profile',
+    private: true,
+    dsh: {
+      profile: {
+        bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', PROFILE_BUNDLE_NAME],
+        patchReload: 'startup',
+      },
+    },
+  }, undefined, 2)}\n`)
+  writeFileSync(join(bundleDirectory, 'package.json'), `${JSON.stringify({
+    name: PROFILE_BUNDLE_NAME,
+    version: '1.0.0',
+    type: 'module',
+    main: './index.js',
+    dsh: { bundle: { patch: './cordis.patch.yml' } },
+  }, undefined, 2)}\n`)
+  writeFileSync(join(bundleDirectory, 'index.js'), 'export function apply() {}\n')
+  writeFileSync(join(bundleDirectory, 'cordis.patch.yml'), `- insert:
+    - id: desktop-profile-smoke
+      name: ${PROFILE_BUNDLE_NAME}
+`)
 }
 
 /** Poll one asynchronous observation until it returns a value. */
@@ -211,12 +241,19 @@ let ready = false
 let testFailure: Error | undefined
 let mainWebSocketDebuggerUrl: string | undefined
 const userDataDirectory = mkdtempSync(join(tmpdir(), 'dsh-desktop-smoke-user-data-'))
+const dshHomeDirectory = mkdtempSync(join(tmpdir(), 'dsh-desktop-smoke-home-'))
+createProfileLocalBundle(dshHomeDirectory)
 const child = spawn(executable, [
   '--inspect=0',
   '--remote-debugging-port=0',
   `--user-data-dir=${userDataDirectory}`,
 ], {
   cwd: repositoryRoot,
+  env: {
+    ...process.env,
+    DSH_HOME: dshHomeDirectory,
+    DSH_TELEMETRY_DISABLED: '1',
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 const childClosed = new Promise<void>((resolveClosed) => {
@@ -336,6 +373,7 @@ try {
     testFailure ??= new Error('desktop smoke: packaged application bypassed coordinated shutdown')
   }
   rmSync(userDataDirectory, { recursive: true, force: true })
+  rmSync(dshHomeDirectory, { recursive: true, force: true })
 }
 
 if (testFailure !== undefined) throw testFailure

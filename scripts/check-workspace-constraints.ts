@@ -57,6 +57,7 @@ const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|app
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js'],
+  '@deepseek-ai/dsh-desktop': ['assets/icon.png', 'lib/*.js', 'lib/*.cjs', 'config'],
   // Sourcemaps stay out by payload policy; the worker-preview surface
   // (dist/preview.html and dist/preview/) backs private experimental
   // packages and is not published.
@@ -211,6 +212,10 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     // A surface bundle's startup row is its own bundle: the Loader imports it
     // as a row module, so it cannot ride inside the package entry.
     ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
+    // Desktop carriers are ordinary Host plugins with no browser bundle. Keep
+    // their runtime subpath explicit so package payload checks prove a deployed
+    // Electron composition can resolve it.
+    ...exportDefault(manifest, './desktop') === './lib/desktop.js' ? ['lib/desktop.js'] : [],
     ...extras,
     // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
     // browser-safe source channels rehomed off src so plain Node can import
