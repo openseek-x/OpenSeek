@@ -1,11 +1,26 @@
+---
+description: "通过 Electron context isolation 更新桥提供仅桌面版的更新设置与非模态更新提示。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-desktop-update
 
 [English](README.md) | 中文
+
+## 概述
 
 桌面版更新偏好与展示插件。Host 半边只注册 `desktop-update` 设置 namespace，并把 `policy` 默认设为 `background`；它不会增加 Cordis Context 服务。Electron 主进程从通用设置服务读取解析后的策略，并观察 `settings/updated`。浏览器半边通过 `ctx.settingsScope` 绑定同一 namespace，随后向 `settings.general.item` 贡献策略与状态行，并向 `shell.overlay` 贡献可关闭的非模态提示。
 
 浏览器半边只用于 Desktop patch。它在激活时要求存在经过 context isolation 的 `globalThis.dshDesktopUpdate` bridge，bridge 缺失时会明确失败。默认 Web 组合不会挂载本插件；`dsh-web-app` 携带本包，只为让覆盖该 bundle 的 Desktop patch 能解析它的客户端模块。
 
+## 目录
+
+- [检查策略](#check-policies)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="check-policies"></a>
 ## 检查策略
 
 | `policy` | Electron 行为 |
@@ -19,6 +34,7 @@
 
 每个主进程状态都带有单调递增的 `revision`。渲染器先订阅事件，再请求初始快照；如果回复不比已经观察到的状态新，就会拒绝该回复，因此 IPC 回复无法把界面回退到中途事件之前。preload 会验证每个快照，包括策略、进度范围、ISO 时间戳以及 HTTPS `github.com/<owner>/<repo>/releases` URL，然后才把它交给本包。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为桌面版更新设置与提示属于应用界面；本包中的任何内容都不会进入模型请求。
@@ -27,8 +43,19 @@
 
 无；本包既不组装也不发送 provider 请求。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **仅限 Desktop 组合** —— 在没有 Electron preload bridge 的情况下挂载浏览器半边会使激活失败；普通浏览器部署必须省略本插件。
 - **Linux 不支持原地更新** —— Electron owner 会把 Linux 压缩包报告为不受支持，因此本包会提供可信的 Releases 页面，而不是下载与安装控件。
 - **关闭状态仅在本次会话有效** —— 关闭某一更新阶段后，同一版本后续的进度 revision 仍会保持隐藏；下载完成等阶段变化会重新出现提示。组件重新挂载时关闭状态会重置，且不会跨应用重启持久化。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护上下文 — 点击展开</summary>
+
+本包仅由 `apps/desktop/config/desktop.patch.yml` 激活；修改 wire 协议时，需保持主进程更新协议与浏览器侧校验同步。
+
+</details>
