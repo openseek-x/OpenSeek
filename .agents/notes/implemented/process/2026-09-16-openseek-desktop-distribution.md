@@ -22,6 +22,8 @@ The fork also scales snapshot gate parallelism to the hosted runner capacity. Th
 
 Fork coverage uses two partitions with two workers and serial gate scheduling. This avoids memory and scheduling contention from the upstream 16-core configuration while preserving the complete coverage gate.
 
+NPM-resolution unit tests retain their 10-second performance limit in normal tests. A partitioned coverage run verifies the same resolver behavior with a longer limit because V8 instrumentation changes the timing signal.
+
 The DeepSeek-default expected-output fixture keeps its streaming response open until the one-shot process issues its background title request on hosted runners. The existing assertion still requires both the agent request and the title request.
 
 Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`. That explicit variable prevents a fork from sending build output to the upstream Pages project; enabling it requires the Cloudflare deployment and Access secrets the workflow already names.

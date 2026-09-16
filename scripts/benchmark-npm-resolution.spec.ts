@@ -13,6 +13,11 @@ import {
 } from './benchmark-npm-resolution.ts'
 
 const roots: string[] = []
+// The normal test remains a performance signal. Partitioned coverage adds V8
+// instrumentation and runs on smaller hosted machines, so retain the resolver
+// correctness check there without turning its fixed 10-second benchmark limit
+// into a platform-capacity failure.
+const resolutionTimeoutMs = process.env.DSH_COVERAGE_PARTITION_MODE === '1' ? 60_000 : 10_000
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -94,7 +99,7 @@ describe('npm resolution benchmark', () => {
       '@deepseek-ai/dsh',
       new Map([['0.1.0', { name: '@deepseek-ai/dsh', version: '0.1.0' }]]),
     ]])
-    const result = await benchmarkNpmResolution(index, '0.1.0', 10_000)
+    const result = await benchmarkNpmResolution(index, '0.1.0', resolutionTimeoutMs)
 
     expect(result.durationMs).toBeGreaterThan(0)
     expect(result.registryRequests).toBeGreaterThan(0)
@@ -114,7 +119,7 @@ describe('npm resolution benchmark', () => {
     const result = await resolveNpmPackageLock(index, {
       '@deepseek-ai/dsh': '0.2.0',
       'dsh-previous': 'npm:@deepseek-ai/dsh@0.1.0',
-    }, 10_000)
+    }, resolutionTimeoutMs)
 
     expect(result.archiveRequests).toBe(0)
     expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh']?.version).toBe('0.2.0')
@@ -150,7 +155,7 @@ describe('npm resolution benchmark', () => {
         }]])],
       ])
 
-      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, 10_000)
+      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, resolutionTimeoutMs)
 
       expect(result.archiveRequests).toBe(0)
       expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh-peer']?.version).toBe('1.0.0')
