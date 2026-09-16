@@ -24,6 +24,8 @@ Fork coverage uses two partitions with two workers and serial gate scheduling. T
 
 NPM-resolution unit tests retain their 10-second performance limit in normal tests. A partitioned coverage run verifies the same resolver behavior with a longer limit because V8 instrumentation changes the timing signal.
 
+The bundled runtime smoke test exercises the POSIX flock binding on macOS and omits it on Windows, where the packaged module correctly declares that capability unsupported. Every platform still verifies Koffi, Sharp, HTML conversion, and the PTY payload.
+
 The DeepSeek-default expected-output fixture emits its provider comments without delaying the one-shot response. The existing assertion still requires both the agent request and the title request.
 
 Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`. That explicit variable prevents a fork from sending build output to the upstream Pages project; enabling it requires the Cloudflare deployment and Access secrets the workflow already names.

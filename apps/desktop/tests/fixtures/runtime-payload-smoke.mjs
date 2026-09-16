@@ -119,7 +119,9 @@ function checkHtml() {
 }
 
 try {
-  await checkFlock()
+  // flock is a POSIX capability. Its package remains in the shared runtime
+  // dependency graph, but Windows correctly reports it as unsupported.
+  if (process.platform !== 'win32') await checkFlock()
   checkKoffi()
   await checkSharp()
   checkHtml()
@@ -132,5 +134,5 @@ try {
 // Natural event-loop drain includes node-pty's worker and console-list helper teardown.
 process.once('beforeExit', () => {
   console.log(JSON.stringify({ node: process.versions.node, platform: process.platform, arch: process.arch,
-    flock: true, koffi: true, sharp: true, html: true, pty: true }))
+    flock: process.platform !== 'win32', koffi: true, sharp: true, html: true, pty: true }))
 })
