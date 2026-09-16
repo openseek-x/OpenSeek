@@ -1,12 +1,13 @@
 /** Message value types, identity, and immutable construction helpers. */
 
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import { MessageId, type ToolCallId } from './brand.ts'
-import { deepFreeze } from './call-config.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { deepFreeze } from '@deepseek-ai/dsh-util-values'
+import type { MessageId, ToolCallId } from './brand.ts'
 import type { ContentBlock, ToolResultBlock } from './types.ts'
 
 /** Provider/model identity and adapter-private replay data for an assistant message. */
-export interface AssistantProvenance {
+export interface AssistantProviderMetadata {
   /** Provider route that produced the message. */
   provider: string
   /** Provider model id that produced the message. */
@@ -20,7 +21,7 @@ export interface AssistantProvenance {
 }
 
 /** Required source of an assistant message produced by a routed model. */
-export interface ModelMessageSource extends AssistantProvenance {
+export interface ModelMessageSource extends AssistantProviderMetadata {
   kind: 'model'
 }
 
@@ -32,7 +33,7 @@ export interface ToolMessageSource {
 
 /**
  * The kind of information in producer-supplied context, declared by the
- * producer beside its provenance.
+ * producer in the same `MessageSource`.
  *
  * `MessageSource.kind` answers *who produced this*; `form` answers *what kind
  * of thing it is*, and the two axes are deliberately independent — several
@@ -149,6 +150,16 @@ export interface AssistantMessage extends Message {
   readonly source: ModelMessageSource
 }
 
+/**
+ * A system-role specialization of the shared message representation: one
+ * rendered system prompt attributed to the plugin that assembled it. Empty
+ * `content` means "no system prompt" and projects to no wire message.
+ */
+export interface SystemMessage extends Message {
+  readonly role: 'system'
+  readonly source: MessageSourceMap['plugin']
+}
+
 /** A tool-result specialization whose model-facing block retains call correlation. */
 export interface ToolResultMessage extends Message {
   readonly role: 'user'
@@ -181,7 +192,7 @@ export function createMessage<T extends NewMessage>(
 ): T & Pick<Message, 'id'> {
   return freezeMessage({
     ...input,
-    id: MessageId(randomUUID()),
+    id: brandString<MessageId>(randomUUID()),
   })
 }
 
@@ -214,6 +225,21 @@ export function createAssistantMessage(
       kind: 'model',
       ...input.source,
     },
+  })
+}
+
+/**
+ * Create and freeze one identified system-role message holding a rendered
+ * system prompt.
+ * @param text - the complete rendered prompt; `''` records "no system prompt".
+ * @param plugin - the plugin that assembled the prompt.
+ * @returns an immutable system message with a fresh stable identity.
+ */
+export function createSystemMessage(text: string, plugin: string): SystemMessage {
+  return createMessage({
+    role: 'system',
+    content: text.length === 0 ? [] : [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin },
   })
 }
 

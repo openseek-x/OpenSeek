@@ -24,16 +24,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
-  CredentialInfo, JsonValue, SettingsNamespaceView, SettingsPathOpView,
+  CredentialInfo, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
-import type { ModelsWire } from './store.ts'
+import { deriveKeyRef, protocolChoices } from './store.ts'
+import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -41,8 +42,7 @@ import styles from './ModelsSection.module.css'
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
-/** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
-const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -66,8 +66,8 @@ export interface ProviderEditorProps {
   schema: SettingsSchemaOperations
   /** Path from the section root to this provider's profile. */
   settingsPath: readonly string[]
-  /** Wire faces for writes and for interrogating a provider endpoint. */
-  api: ModelsWire
+  /** The Host operations this card writes and interrogates through. */
+  operations: ModelsOperations
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -155,7 +155,7 @@ function refFor(
  * @returns the editor card.
  */
 export function ProviderEditor(props: ProviderEditorProps): ReactNode {
-  const { namespace, schema, settingsPath, api, t } = props
+  const { namespace, schema, settingsPath, operations, t } = props
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
   const [keyDraft, setKeyDraft] = useState('')
   const [keyState, setKeyState] = useState<CredentialInfo | undefined>(undefined)
@@ -186,19 +186,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   useEffect(() => {
     let stale = false
     setKeyState(undefined)
-    // The key state is a placeholder hint, not a precondition for editing:
-    // neither a business rejection nor a transport failure may reach the
-    // browser as an unhandled rejection, so the card simply renders without
-    // the "already configured" hint.
-    void api.credentials.describe([keyRef]).then(
-      (response) => {
-        if (stale || !response.ok) return
-        setKeyState(response.value[keyRef])
-      },
-      () => undefined,
-    )
+    // The key state is a placeholder hint, not a precondition for editing: a
+    // refused describe leaves the card without the "already configured" hint.
+    void operations.describeCredential(keyRef).then((described) => {
+      if (stale) return
+      setKeyState(described)
+    })
     return () => { stale = true }
-  }, [api.credentials, keyRef])
+  }, [operations, keyRef])
 
   const stringAt = (source: unknown, key: string): string | undefined => {
     const value = schema.getPath(source, [key])
@@ -282,19 +277,15 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         ? [{ op: 'set', path: [...settingsPath], value: {} }]
         : pathOps(settingsPath, committedOriginal, next)
     if (ops.length > 0) {
-      const response = await api.settings.mutate(ns, ops, expectedRevision)
-      if (!response.ok) {
-        return response.error.code === 'settings-conflict'
-          ? t('conflict')
-          : response.error.message
-      }
-      setCommittedOriginal(schema.getPath(response.value.user, settingsPath))
-      setExpectedRevision(response.value.revision)
+      const written = await operations.writeSettings(ns, ops, expectedRevision)
+      if (written.kind !== 'written') return written.kind === 'conflict' ? t('conflict') : written.message
+      setCommittedOriginal(schema.getPath(written.view.user, settingsPath))
+      setExpectedRevision(written.view.revision)
       setDraft(next)
     }
     if (keyValue.length > 0) {
-      const stored = await api.credentials.set(keyRef, keyValue)
-      if (!stored.ok) return stored.error.message
+      const stored = await operations.storeCredential(keyRef, keyValue)
+      if (stored !== undefined) return stored
     }
     setKeyDraft('')
     return undefined
@@ -310,11 +301,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         return
       }
       props.onClose(true)
-    } catch (error) {
-      // A transport failure (disconnect, a request the host refuses) rejects
-      // rather than answering; without this the card would stay busy forever
-      // with no error shown.
-      setFailure(messageOf(error))
     } finally {
       setBusy(false)
     }
@@ -427,14 +413,16 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 type="text"
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
-                  ? DEEPSEEK_PUBLIC_BASE_URL
+                  ? t(stringAt(fallback, 'protocol') === 'messages' ? 'deepSeekMessagesBaseUrl' : 'deepSeekChatBaseUrl')
                   : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                aria-describedby={family === 'deepseek' ? `${props.provider}-endpoint-hint` : undefined}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
                   setField('baseURL', event.target.value === '' ? undefined : event.target.value)
                 }}
               />
+              {family === 'deepseek' ? <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{t('deepSeekEndpointHint')}</span> : null}
             </div>
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
@@ -474,7 +462,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
                 />
               )
-              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api} />}
+              : (
+                <ModelListEditor
+                  {...catalogProps}
+                  probe={probe}
+                  probeBlocked={keyFailure}
+                  operations={operations}
+                />
+              )}
           </div>
         </details>}
       </>

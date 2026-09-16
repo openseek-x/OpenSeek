@@ -1,21 +1,17 @@
-/**
- * Browser wire client. The plugin selects fixture or HTTP transport, provides
- * the shared API client, and lets API Gateway own the connection loop.
- */
+/** Browser wire client: Remote transport and connection generations. */
 import type { Context } from '@deepseek-ai/cordis'
 import {
   ConnectionController,
-  type ConnectionConfig,
+  type ConnectionRecoveryConfig,
   type ConnectionGeneration,
   type ConnectionGenerationSource,
   type ConnectionSinks,
+  type ConnectionState,
 } from './connection.ts'
-import { createDesktopTransport } from './desktop-api-client.ts'
-import { desktopConnectionBridge } from './desktop-bridge.ts'
-import { createFixtureConnectionRpc } from './fixture.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
+import { resolveConnectionConfig } from '../recovery-config.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -31,7 +27,7 @@ declare module '@deepseek-ai/cordis' {
 // ---- Browser-safe protocol and shared value re-exports ----
 export type {
   MessageId,
-  RpcRequest, RpcResponse, RpcResult, RpcError, RpcErrorCode,
+  RpcRequest, RpcResponse, RpcResult,
   ClientRequest, ServerResponse, RpcMessage,
   SessionId, SessionEvent, ContentBlock, StreamChunk,
 } from './api.ts'
@@ -43,7 +39,7 @@ export {
 // Connection loop types are public through ConnectionHandle.start; the
 // controller remains package-internal.
 export type {
-  ConnectionConfig,
+  ConnectionRecoveryConfig,
   ConnectionGeneration,
   ConnectionGenerationSource,
   ConnectionHostInfo,
@@ -63,19 +59,33 @@ export interface ConnectionGenerationState {
   subscribe(listener: () => void): () => void
 }
 
+/** Observable recovery lifecycle of the owned Connection loop. */
+export interface ConnectionStateSource {
+  /** Current state, or undefined before the first connection outcome. */
+  getSnapshot(): ConnectionState | undefined
+  /** Subscribe to state changes. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Required services (none — this is the wire root). */
 export const inject: string[] = []
 
 /**
- * Carrier override installed on the page global before plugin boot. The served
- * web app leaves it unset and gets HTTP + WebSocket; a shell that owns a
- * different physical transport (the worker preview's postMessage tunnel)
- * provides both halves here instead of forking this plugin.
+ * Physical carrier selected when the Connection service is installed. The
+ * served web app omits it and gets HTTP + WebSocket; a shell that owns a
+ * different transport (the worker preview's postMessage tunnel) provides both
+ * halves instead of forking this plugin.
  */
 export interface ClientTransportHooks {
-  /** Transport for generic unary RPC channels (the Typert gateway). */
-  fetch: RpcFetch
-  /** Worker-local Gateway stream carrier; absent when the page uses the Gateway WebSocket. */
+  /**
+   * Already decoded logical RPC carrier. When present it replaces the HTTP
+   * caller outright: no envelopes, no `fetch`, no `openStream` (an in-process
+   * Host such as a test mock plugs in here).
+   */
+  rpc?: ClientConnectionRpc
+  /** Transport for generic unary RPC channels (the Typert gateway); unused when `rpc` is present. */
+  fetch?: RpcFetch
+  /** Worker-local Gateway stream carrier; absent when the page uses the Gateway WebSocket or `rpc` is present. */
   openStream?: RpcStreamOpen
   /**
    * Bundle transport for the module system, present when the carrier also owns
@@ -97,12 +107,27 @@ export interface ClientTransportHooks {
 /** Page global carrying {@link ClientTransportHooks}; absent in the served web app. */
 interface ClientTransportGlobal {
   __DSH_TRANSPORT__?: ClientTransportHooks
+  __DSH_CONNECTION_RECOVERY__?: unknown
+}
+
+/** Browser location fields used to classify loopback authority. */
+export interface ConnectionLocation {
+  readonly hostname: string
+}
+
+/** Instance-local inputs for installing a Connection service. */
+export interface ConnectionInstallOptions {
+  /** Explicit physical carrier; omit for the browser HTTP + WebSocket carrier. */
+  readonly transport?: ClientTransportHooks
+  /** Reconnect timing overrides; omitted fields use controller defaults. */
+  readonly recovery?: ConnectionRecoveryConfig
+  /** Page location; omit for a non-browser composition. */
+  readonly location?: ConnectionLocation
 }
 
 /**
- * The ctx.connection service API: the API client plus a one-shot controller
- * starter. API Gateway supplies generation readiness and reset callbacks;
- * Connection stays independent of downstream domain state.
+ * The ctx.connection service API. API Gateway supplies generation readiness
+ * and reset callbacks; Connection stays independent of downstream domain state.
  */
 export interface ConnectionHandle {
   /**
@@ -113,8 +138,12 @@ export interface ConnectionHandle {
   readonly isLoopback: boolean
   /** Current Remote event generation and the Host facts carried by its opening frame. */
   readonly generation: ConnectionGenerationState
+  /** Current recovery lifecycle for connection-specific consumers. */
+  readonly state: ConnectionStateSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
+  /** Reset retry progression and replace the current attempt immediately. */
+  reconnect(): void
   /**
    * Register the sole source defining Host generations. The source reports
    * ready only after its incremental listeners are attached.
@@ -126,35 +155,63 @@ export interface ConnectionHandle {
    * Start the connect/reconnect loop with the consumer's state callbacks.
    * API Gateway owns the loop; a second call throws.
    * @param sinks - connection-state callbacks.
-   * @param config - reconnect/backoff tunables.
-   * @returns stop handle for the loop.
+   * @param config - explicit timing overrides; omitted fields use Host bootstrap timing.
+   * @returns lifecycle controls for the loop.
    */
-  start(sinks: ConnectionSinks, config?: ConnectionConfig): { stop(): void }
+  start(sinks: ConnectionSinks, config?: ConnectionRecoveryConfig): ConnectionLoop
+}
+
+/** Controls retained by the sole owner of a running connection loop. */
+export interface ConnectionLoop {
+  /** Stop the loop and withdraw its active generation. */
+  stop(): void
 }
 
 interface ConnectionOwner {
   readonly token: object
   readonly source: ConnectionGenerationSource
   readonly controller: ConnectionController
+  readonly stopNetworkWatch: () => void
+}
+
+interface BrowserNetworkTarget {
+  readonly navigator?: { readonly onLine?: boolean }
+  addEventListener(type: 'online' | 'offline', listener: () => void): void
+  removeEventListener(type: 'online' | 'offline', listener: () => void): void
+}
+
+function watchBrowserNetwork(controller: ConnectionController): () => void {
+  const browser = (globalThis as { readonly window?: BrowserNetworkTarget }).window
+  const initiallyAvailable = browser?.navigator?.onLine
+  if (browser === undefined || initiallyAvailable === undefined) return () => {}
+  const online = (): void => { controller.setNetworkAvailable(true) }
+  const offline = (): void => { controller.setNetworkAvailable(false) }
+  controller.setNetworkAvailable(initiallyAvailable)
+  browser.addEventListener('online', online)
+  browser.addEventListener('offline', offline)
+  return () => {
+    browser.removeEventListener('online', online)
+    browser.removeEventListener('offline', offline)
+  }
 }
 
 /**
- * Client plugin body: pick the api by page mode and provide ctx.connection.
- * @param ctx - client cordis context.
+ * Install one Context-owned Connection service from explicit composition inputs.
+ * @param ctx - client Cordis context.
+ * @param options - physical carrier, reconnect timing, and page location.
  */
-export function apply(ctx: Context): void {
-  const pageLocation = typeof location === 'undefined' ? undefined : location
-  const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
-  const fixtureRpc = fixture ? createFixtureConnectionRpc() : undefined
-  const explicitTransport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
-  const desktop = explicitTransport === undefined ? desktopConnectionBridge() : undefined
-  const transport = explicitTransport ?? (desktop === undefined ? undefined : createDesktopTransport(desktop))
-  const rpc = fixtureRpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
+export function installConnection(ctx: Context, options: ConnectionInstallOptions = {}): void {
+  const pageLocation = options.location
+  const transport = options.transport
+  const recovery = options.recovery ?? {}
+  const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
   let generationId = 0
   let generation: ConnectionGeneration | undefined
+  let state: ConnectionState | undefined
   const generationListeners = new Set<() => void>()
+  const stateListeners = new Set<() => void>()
   const publishGeneration = (next: ConnectionGeneration | undefined): void => {
     if (Object.is(generation, next)) return
     generation = next
@@ -166,11 +223,24 @@ export function apply(ctx: Context): void {
       }
     }
   }
+  const publishState = (next: ConnectionState | undefined): void => {
+    if (state === next) return
+    state = next
+    for (const listener of [...stateListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[connection] state listener threw:', error)
+      }
+    }
+  }
   const releaseOwner = (current: ConnectionOwner): void => {
     if (owner !== current) return
     owner = undefined
+    current.stopNetworkWatch()
     current.controller.stop()
     publishGeneration(undefined)
+    publishState(undefined)
   }
   const handle: ConnectionHandle = {
     isLoopback: transport?.ownsHost === true || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
@@ -181,7 +251,17 @@ export function apply(ctx: Context): void {
         return () => { generationListeners.delete(listener) }
       },
     },
+    state: {
+      getSnapshot: () => state,
+      subscribe: (listener) => {
+        stateListeners.add(listener)
+        return () => { stateListeners.delete(listener) }
+      },
+    },
     rpc,
+    reconnect() {
+      owner?.controller.reconnect()
+    },
     registerGenerationSource(source) {
       if (generationSource !== undefined) {
         throw new Error('connection: a generation source is already registered')
@@ -209,14 +289,15 @@ export function apply(ctx: Context): void {
           sinks.onConnected?.(host)
         },
         onStateChange: (state) => {
-          if (state === 'reconnecting') {
+          if (state !== 'connected') {
             publishGeneration(undefined)
           }
           if (!ownsGeneration()) return
+          publishState(state)
           sinks.onStateChange?.(state)
         },
-      }, config ?? {})
-      const current = { token, source, controller }
+      }, { ...recovery, ...config })
+      const current = { token, source, controller, stopNetworkWatch: watchBrowserNetwork(controller) }
       owner = current
       controller.start()
       return {
@@ -225,4 +306,19 @@ export function apply(ctx: Context): void {
     },
   }
   ctx.provide('connection', handle)
+}
+
+/**
+ * Client plugin body: read the page composition and install its Connection service.
+ * @param ctx - client Cordis context.
+ */
+export function apply(ctx: Context): void {
+  const globals = globalThis as ClientTransportGlobal
+  const pageLocation = typeof location === 'undefined' ? undefined : location
+  const transport = globals.__DSH_TRANSPORT__
+  installConnection(ctx, {
+    ...(transport === undefined ? {} : { transport }),
+    recovery: resolveConnectionConfig(globals.__DSH_CONNECTION_RECOVERY__),
+    ...(pageLocation === undefined ? {} : { location: pageLocation }),
+  })
 }

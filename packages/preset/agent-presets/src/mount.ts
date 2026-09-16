@@ -19,7 +19,8 @@ import { Context, type Fiber } from '@deepseek-ai/cordis'
 import { Include } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryTree } from '@deepseek-ai/cordis-plugin-loader'
 import { scopeOf, scopeParentOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { PresetMountError, type AgentPreset } from './preset.ts'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { AgentPreset } from './preset.ts'
 import { classifyRowSpecifier } from './specifier.ts'
 
 /** What one mounted subtree publishes about itself for the audit to read. */
@@ -57,6 +58,14 @@ const harnessBase = new WeakMap<object, string>()
 class PresetTree extends Include {
   constructor(ctx: Context, config: Include.Config) {
     super(ctx, config)
+    // EntryTree's constructor files every new tree under the nearest owning
+    // Loader entry's `subtree` slot — here the roster's own row, because the
+    // standing scope descends from the roster's fiber. Left in place, root
+    // `loader.entries()` would walk this composition as host entries (each
+    // preset overwriting the last), against the standing mount's contract of
+    // not being a Loader entry. Reclaim the slot.
+    const owner = this.ctx.fiber.entry
+    if (owner?.subtree === this) delete owner.subtree
     mounted.set(config, { tree: this, fiber: ctx.fiber })
   }
 
@@ -153,11 +162,18 @@ function pruneDisposedMounts(): void {
 /**
  * Every preset composition still installed, pruning fibers disposed since the
  * last read.
+ *
+ * The record set is module state and therefore spans every Cordis runtime in
+ * the process; a reader that serves one runtime passes that runtime's root
+ * fiber so another runtime mounting the same preset id (a second embedded
+ * app, a test's second harness) never answers for it.
+ * @param within - when present, only mounts inside this fiber's subtree.
  * @returns the live mounts.
  */
-export function livePresetMounts(): PresetMount[] {
+export function livePresetMounts(within?: Fiber): PresetMount[] {
   pruneDisposedMounts()
-  return [...mounts]
+  const all = [...mounts]
+  return within === undefined ? all : all.filter(mount => withinFiber(mount.fiber, within))
 }
 
 /**
@@ -279,22 +295,26 @@ export function serviceForAgent<K extends string & keyof Context>(
 /**
  * Rows that did not reach a usable state, each rendered as one diagnostic line.
  *
- * A row whose module failed to import or whose plugin threw already rejects the
- * mount through the loader; what remains observable here is a row still waiting
- * for a service the composition never supplies.
+ * Wait for the subtree, then report import failures, activation failures, and
+ * rows waiting for services the composition does not supply.
  * @param tree - the mounted subtree.
  * @returns one line per unusable row, empty when every enabled row is usable.
  */
-export function inactiveRows(tree: EntryTree): string[] {
+export async function inactiveRows(tree: EntryTree): Promise<string[]> {
+  await tree.await()
   const lines: string[] = []
   for (const entry of tree.entries()) {
     if (entry.disabled) continue
     const fiber = entry.fiber
-    /* v8 ignore next 4 -- the loader rejects an entry whose module or plugin failed,
-       so a settled tree never holds an enabled fiber-less entry; the branch exists
-       only because `Entry.fiber` is declared optional. */
     if (fiber === undefined) {
       lines.push(`${entry.options.id} (${entry.options.name}): never started`)
+      continue
+    }
+    try {
+      await fiber.await()
+    } catch (error) {
+      const detail = mountDetail(error)
+      lines.push(`${entry.options.id} (${entry.options.name}): ${detail}`)
       continue
     }
     const missing = Object.keys(fiber.inject).filter(name => fiber.ctx.get(name) === undefined)
@@ -308,14 +328,8 @@ export function inactiveRows(tree: EntryTree): string[] {
 /**
  * The causes of `error` whose detail its own message does not already carry.
  *
- * `AggregateError` names none of its causes in its own message, so its
- * `errors` are the branches. The Loader's per-row wrapper takes the opposite
- * approach: it appends `cause.message` to the message it builds and keeps the
- * cause only as `error.cause`, so following a plain chain would print every
- * line twice. That leaves exactly one lossy shape — a wrapped row whose cause
- * is an `AggregateError`. Its message ends with the aggregate's own line and
- * drops the `errors` behind it, which is how a failed group reports as
- * "loader entries failed to apply" and names none of the rows that failed.
+ * Aggregate errors carry separate member messages. A wrapper can preserve the
+ * aggregate as its cause without including those messages in its own text.
  * @param error - the failure to read branches from.
  * @returns the branches to render beneath `error.message`, possibly empty.
  */
@@ -327,19 +341,12 @@ function detailBranches(error: Error): readonly unknown[] {
 /**
  * The reportable text of a mount failure.
  *
- * The loader reports several failed rows as one `AggregateError`, whose own
- * message names none of them; without flattening, a composition that fails on
- * two rows says only "loader entries failed to apply" and the operator has
- * nothing to act on. Nested groups indent under the row that owns them, so a
- * composition failing inside a group still names the rows rather than the
- * group alone.
+ * A plugin may reject with an aggregate or wrap one as its cause. Include its
+ * member messages beneath the row diagnostic so each failure is visible.
  * @param error - the value the mount rejected with.
  * @returns a single-line-per-cause description.
  */
 function mountDetail(error: unknown): string {
-  /* v8 ignore next -- every path into the mount's catch throws an Error: the loader
-     wraps a row's thrown value before it propagates, and this module's own
-     rejections are Errors. The fallback keeps a hostile value readable. */
   if (!(error instanceof Error)) return String(error)
   const branches = detailBranches(error)
   if (branches.length === 0) return error.message
@@ -384,7 +391,7 @@ export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promi
     /* v8 ignore next -- the subclass constructor runs before `await()` settles for every mounted tree */
     if (subtree === undefined) throw new Error('mounted subtree did not publish its entry tree')
     const { tree, fiber } = subtree
-    const unusable = inactiveRows(tree)
+    const unusable = await inactiveRows(tree)
     if (unusable.length > 0) {
       throw new Error(`${String(unusable.length)} row(s) did not activate:\n${unusable.join('\n')}`)
     }
@@ -406,6 +413,12 @@ export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promi
       // Swallows only this subtree's teardown failure. The mount error below is
       // the actionable one, and the discarded fiber is unreachable either way.
     }
-    throw new PresetMountError(preset.id, `${mountDetail(error)} (${preset.path})`, { cause: error })
+    const reason = `${mountDetail(error)} (${preset.path})`
+    throw new RemoteError(
+      'agent-preset/invalid',
+      `agent-presets: preset "${preset.id}" failed to mount: ${reason}`,
+      { agentPreset: preset.id, reason },
+      { cause: error },
+    )
   }
 }

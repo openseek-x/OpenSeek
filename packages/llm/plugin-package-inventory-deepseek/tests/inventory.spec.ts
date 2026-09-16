@@ -8,8 +8,10 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import AgentPresets, { mountPreset } from '@deepseek-ai/dsh-agent-presets'
+import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as PluginInventory from '../src/index.ts'
 
@@ -35,15 +37,19 @@ async function packagePlugin(
   return `./${dir}/plugin.mjs`
 }
 
-async function harness(enabled?: boolean): Promise<{ ctx: Context; root: string; disposeInventory: () => Promise<void> }> {
+async function harness(
+  enabled?: boolean, packageService = false,
+): Promise<{ ctx: Context; root: string; disposeInventory: () => Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-packages-'))
   roots.push(root)
   const ctx = new Context()
   contexts.push(ctx)
   ctx.baseUrl = pathToFileURL(join(root, 'cordis.yml')).href
   await ctx.plugin(Loader)
+  if (packageService) await ctx.plugin(PluginPackages)
   ctx.loader.builtins.include = Include
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentPresets, { default: 'fixture', roots: [], includeShippedRoot: false, includeUserRoot: false })
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
   const inventory = enabled === undefined
@@ -117,13 +123,13 @@ describe('DeepSeek plugin package inventory', () => {
 
     const id = SessionId('bare-agent')
     const agentScope = createScope(ctx, {})
-    ctx.agents.register({ id, ctx: agentScope.ctx, session: { id } } as unknown as Agent)
+    await ctx.agents.register({ id, ctx: agentScope.ctx, session: { id } } as unknown as Agent)
     const bare = await ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL, sessionId: id })
     expect(bare.fields.dsh_plugin_packages?.packages).toEqual([{ name: 'host-only', version: '3.0.0' }])
   })
 
   it('resolves scoped and unscoped bare subpaths, absolute/file modules, and skips URL or Cordis modules', async () => {
-    const { ctx, root } = await harness()
+    const { ctx, root } = await harness(undefined, true)
     await packagePlugin(root, 'node_modules/plain-package', { name: 'plain-package', version: '1.0.0' })
     await packagePlugin(root, 'node_modules/@scope/scoped-package', { name: '@scope/scoped-package', version: '2.0.0' })
     await packagePlugin(root, 'absolute-package', { name: 'absolute-package', version: '3.0.0' })
@@ -167,6 +173,18 @@ describe('DeepSeek plugin package inventory', () => {
       .rejects.toThrow(/cannot resolve active package/)
   })
 
+  it('does not bypass the profile package service for a missing bare package', async () => {
+    const { ctx } = await harness(undefined, true)
+    ctx.loader.internal = {
+      version: 'v2',
+      import: async () => ({ default: () => {} }),
+    } as unknown as NonNullable<typeof ctx.loader.internal>
+    await ctx.loader.create({ name: 'missing-profile-package' })
+
+    await expect(ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL }))
+      .rejects.toThrow(/cannot resolve active package/)
+  })
+
   it('supports a direct embedding whose context has no base URL', async () => {
     const ctx = new Context()
     contexts.push(ctx)
@@ -192,6 +210,7 @@ describe('DeepSeek plugin package inventory', () => {
 
     await ctx.loader.create({ name: 'versioned-plugin/plugin.mjs' })
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(composition).href } })
+    await ctx.loader.await()
 
     const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL })
     expect(prepared.fields.dsh_plugin_packages?.packages).toEqual([
@@ -216,7 +235,7 @@ describe('DeepSeek plugin package inventory', () => {
     const agentScope = createScope(ctx, agentKey, { parent: standingKey })
     const id = SessionId('preset-agent')
     const agent = { id, ctx: agentScope.ctx, session: { id } } as unknown as Agent
-    ctx.agents.register(agent)
+    await ctx.agents.register(agent)
 
     const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL, sessionId: id })
     expect(prepared.fields.dsh_plugin_packages?.packages).toEqual([{ name: 'preset-only', version: '4.0.0' }])

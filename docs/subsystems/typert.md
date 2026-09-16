@@ -38,7 +38,7 @@ interface TypertLookupDefinition {
 
 ## Invocation descriptors
 
-An `InvocationDescriptor` is local reflection, not a wire message. Host and consumer builds generate corresponding descriptors; the request sends only the endpoint and named `args`. Strict codecs carry generated schemas, while SRC codecs enforce JSON-safe values without structural type recovery. Cancellation is an out-of-band carrier signal injected after business parameters and never enters `args`.
+An `InvocationDescriptor` is local reflection, not a wire message. Host and consumer builds generate corresponding descriptors; the request sends only the endpoint and named `args`. Strict codecs carry generated schema factories, while SRC codecs enforce JSON-safe values without structural type recovery. Cancellation is an out-of-band carrier signal injected after business parameters and never enters `args`.
 
 ```ts type-equiv
 /** Codec attached to one invocation parameter or result. */
@@ -46,7 +46,8 @@ type TypertCodec =
   | {
     readonly mode: 'strict'
     readonly typeSymbol: string
-    readonly schema: TypertSchema
+    /** Materialize and return the process-realm schema on first boundary use. */
+    readonly create: () => TypertSchema
   }
   | {
     readonly mode: 'src-json'
@@ -139,7 +140,7 @@ interface TypertRemoteNamespaceMap {}
 
 ## Host Gateway
 
-Connection decodes its carrier envelope before calling `ctx.typertGateway`. The request carries exact named wire fields and the carrier's cancellation signal separately; infrastructure and boundary failures use the Gateway's in-process error taxonomy, ordinary exceptions are folded by the RPC adapter into the transport's `internal` error code, and existing RPC errors carried by lookup policy through `TypertLookupFailure` are returned unchanged.
+Connection decodes its carrier envelope before calling `ctx.typertGateway`. The request carries exact named wire fields and the carrier's cancellation signal separately; infrastructure and boundary failures ride `TypertGatewayError`, whose `gateway/*` codes are ordinary `RemoteError` codes, so the RPC adapter passes every structurally identified `RemoteError` through with its code and details intact and folds only unrecognized exceptions into `gateway/internal`.
 
 ```ts type-equiv
 /** One Remote method request after a carrier has decoded its envelope. */
@@ -158,23 +159,23 @@ interface InvokeRemoteRequest {
 ```ts type-equiv
 /** Stable infrastructure and boundary failures emitted before or after business execution. */
 type TypertGatewayErrorCode =
-  | 'ambiguous-endpoint'
-  | 'arguments-invalid'
-  | 'binding-invalid'
-  | 'context-failed'
-  | 'context-not-found'
-  | 'context-unavailable'
-  | 'definition-unavailable'
-  | 'input-invalid'
-  | 'invocation-unavailable'
-  | 'lookup-failed'
-  | 'lookup-not-found'
-  | 'lookup-unavailable'
-  | 'method-unavailable'
-  | 'provider-mismatch'
-  | 'result-invalid'
-  | 'service-unavailable'
-  | 'signature-invalid'
+  | 'gateway/ambiguous-endpoint'
+  | 'gateway/arguments-invalid'
+  | 'gateway/binding-invalid'
+  | 'gateway/context-failed'
+  | 'gateway/context-not-found'
+  | 'gateway/context-unavailable'
+  | 'gateway/definition-unavailable'
+  | 'gateway/input-invalid'
+  | 'gateway/invocation-unavailable'
+  | 'gateway/lookup-failed'
+  | 'gateway/lookup-not-found'
+  | 'gateway/lookup-unavailable'
+  | 'gateway/method-unavailable'
+  | 'gateway/provider-mismatch'
+  | 'gateway/result-invalid'
+  | 'gateway/service-unavailable'
+  | 'gateway/signature-invalid'
 ```
 
 ```ts type-equiv
@@ -261,14 +262,14 @@ register(contribution: TypertContribution): TypertDisposer
 /**
  * Look up one schema by `<package>#<name>`.
  * @param key - global schema key.
- * @returns the live schema record, or `undefined` when absent.
+ * @returns a record containing the cached schema, or `undefined` when absent.
  */
 get(key: string): TypertSchemaRecord | undefined
 
 /**
  * Resolve one required schema.
  * @param key - global schema key.
- * @returns the live schema record.
+ * @returns a record containing the cached schema.
  * @throws when the key is malformed, the package face is absent, or the schema is not contributed.
  */
 resolve(key: string): TypertSchemaRecord
@@ -276,7 +277,7 @@ resolve(key: string): TypertSchemaRecord
 /**
  * Enumerate live schemas in registration order.
  * @param filter - optional package and face restriction.
- * @returns matching schema records.
+ * @returns matching records containing the cached schemas.
  */
 list(filter: TypertSchemaFilter = {}): TypertSchemaRecord[]
 

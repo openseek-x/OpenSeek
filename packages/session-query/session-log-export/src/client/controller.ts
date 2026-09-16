@@ -19,26 +19,7 @@ export interface SessionLogDownloadState {
 }
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
-type Save = (url: string, filename: string) => void | Promise<void>
-
-/** Narrow preload contract used only for native Session export downloads. */
-interface DesktopConnectionBridge {
-  request(request: {
-    readonly id: string
-    readonly url: string
-    readonly method: string
-    readonly headers: [string, string][]
-  }): Promise<{
-    readonly status: number
-    readonly statusText: string
-    readonly headers: [string, string][]
-    readonly body: Uint8Array
-  }>
-  cancelRequest(id: string): void
-  openStream: (...args: never[]) => unknown
-  cancelStream(id: string): void
-  saveDownload(path: string, filename: string): Promise<void>
-}
+type Save = (url: string, filename: string) => void
 
 const INITIAL: SessionLogDownloadState = { bySession: {} }
 
@@ -69,52 +50,6 @@ function hostBase(): string {
   return origin !== undefined && origin !== 'null' ? origin : 'http://dsh.internal'
 }
 
-function desktopBridge(): DesktopConnectionBridge | undefined {
-  const value = (globalThis as { dshDesktop?: unknown }).dshDesktop
-  if (typeof value !== 'object' || value === null) return undefined
-  const candidate = value as Partial<DesktopConnectionBridge>
-  return typeof candidate.request === 'function'
-    && typeof candidate.cancelRequest === 'function'
-    && typeof candidate.openStream === 'function'
-    && typeof candidate.cancelStream === 'function'
-    && typeof candidate.saveDownload === 'function'
-    ? candidate as DesktopConnectionBridge
-    : undefined
-}
-
-function defaultFetch(input: string | URL, init?: RequestInit): Promise<Response> {
-  const desktop = desktopBridge()
-  if (desktop === undefined) return fetch(input, init)
-  const url = input instanceof URL ? input : new URL(input, hostBase())
-  const id = crypto.randomUUID()
-  const signal = init?.signal ?? null
-  if (signal?.aborted === true) {
-    return Promise.reject(signal.reason instanceof Error ? signal.reason : new DOMException('The operation was aborted.', 'AbortError'))
-  }
-  const onAbort = (): void => { desktop.cancelRequest(id) }
-  signal?.addEventListener('abort', onAbort, { once: true })
-  return desktop.request({
-    id,
-    url: url.toString(),
-    method: (init?.method ?? 'GET').toUpperCase(),
-    headers: [...new Headers(init?.headers).entries()],
-  }).then(response => new Response(Uint8Array.from(response.body).buffer, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  })).finally(() => { signal?.removeEventListener('abort', onAbort) })
-}
-
-function defaultSave(url: string, filename: string): void | Promise<void> {
-  const desktop = desktopBridge()
-  const parsed = new URL(url)
-  if (desktop === undefined) {
-    downloadUrl(url, filename)
-    return
-  }
-  return desktop.saveDownload(parsed.pathname + parsed.search, filename)
-}
-
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -132,8 +67,8 @@ export class SessionLogDownloadController {
    * @param save - browser save operation.
    */
   constructor(
-    private readonly fetcher: Fetch = defaultFetch,
-    private readonly save: Save = defaultSave,
+    private readonly fetcher: Fetch = (input, init) => fetch(input, init),
+    private readonly save: Save = downloadUrl,
   ) {}
 
   /**
@@ -185,7 +120,7 @@ export class SessionLogDownloadController {
         const detail = await response.text().catch(() => '')
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
-      await this.save(url.toString(), sessionLogZipFilename(sessionId))
+      this.save(url.toString(), sessionLogZipFilename(sessionId))
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
       this.publish(sessionId, { open, status: 'success', error: null })
     } catch (error: unknown) {

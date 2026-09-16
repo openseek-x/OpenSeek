@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
-import { Context, type Fiber } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Fiber } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderIndexInjections, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
@@ -24,10 +24,48 @@ const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'boot')
 const APPLICATION_URL = comboUrl([UI_RENDERER_ID], 'app')
 
 let root: string | undefined
+const contexts: { ctx: Context; ready?: Promise<WebRoute> }[] = []
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(contexts.splice(0).map(async ({ ctx, ready }) => {
+    await ready
+    await ctx.fiber.dispose()
+  }))
   if (root !== undefined) rmSync(root, { recursive: true, force: true })
   root = undefined
+})
+
+it.each([false, true])('tracks the Web carrier lifetime when server-first is %s', async (serverFirst) => {
+  const ctx = new Context()
+  contexts.push({ ctx })
+  ctx.provide('loader', { entries: () => [] })
+  const routes = new Set<WebRoute>()
+  const mountServer = () => ctx.plugin((serverCtx) => {
+    serverCtx.provide('webServer', {
+      register: (route: WebRoute) => {
+        routes.add(route)
+        return () => { routes.delete(route) }
+      },
+    } as WebServer)
+  })
+  let server = serverFirst ? await mountServer() : undefined
+  const modules = await ctx.plugin(ClientModuleRegistry)
+  const service = ctx.get('clientModules')!
+  expect(service.graph().entries).toEqual([])
+  expect((await service.fetchBundle(new Request('http://localhost/plugins/missing'))).status).toBe(404)
+  if (!serverFirst) {
+    expect(routes.size).toBe(0)
+    server = await mountServer()
+  }
+  await expect.poll(() => routes.size).toBe(1)
+  await server!.dispose()
+  await expect.poll(() => routes.size).toBe(0)
+  expect(modules.state).toBe(FiberState.ACTIVE)
+  expect((await service.fetchBundle(new Request('http://localhost/plugins/missing'))).status).toBe(404)
+  await mountServer()
+  await expect.poll(() => routes.size).toBe(1)
+  await modules.dispose()
+  expect(routes.size).toBe(0)
 })
 
 /** Create a resolvable package whose client export points at the returned path. */
@@ -65,8 +103,10 @@ function constructWithRoute(
     entryBaseUrl?: string
     internal?: NonNullable<Context['loader']['internal']>
   } = {},
-): { context: Context; service: ClientModuleRegistry; route: WebRoute } {
+): { context: Context; service: ClientModuleRegistry; route: Promise<WebRoute> } {
   const ctx = new Context()
+  const owned: typeof contexts[number] = { ctx }
+  contexts.push(owned)
   ctx.baseUrl = options.contextBaseUrl ?? pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
     internal: options.internal,
@@ -81,28 +121,28 @@ function constructWithRoute(
       }
     },
   })
-  let route: WebRoute | undefined
+  const route = Promise.withResolvers<WebRoute>()
   const webServer: Pick<WebServer, 'port' | 'register' | 'tapIndex'> = {
     port: 0,
     register: (candidate) => {
-      if (candidate.path === '/plugins') route = candidate
+      if (candidate.path === '/plugins') route.resolve(candidate)
       return () => {}
     },
     tapIndex: () => () => {},
   }
   ctx.provide('webServer', webServer as WebServer)
   const service = new ClientModuleRegistry(ctx)
-  if (route === undefined) throw new Error('client bundle route was not registered')
-  return { context: ctx, service, route }
+  owned.ready = route.promise
+  return { context: ctx, service, route: route.promise }
 }
 
 /** Construct the node-half service over the enabled fixture entries. */
-async function construct(packageNames: string[]): Promise<ClientModuleRegistry> {
-  return (await constructWithRoute(packageNames)).service
+function construct(packageNames: string[]): ClientModuleRegistry {
+  return constructWithRoute(packageNames).service
 }
 
 /** Invoke the registered plugin route and capture status, headers, and bytes. */
-async function routeRequest(route: WebRoute, url: string, method = 'GET'): Promise<{
+async function routeRequest(route: Promise<WebRoute>, url: string, method = 'GET'): Promise<{
   status: number
   headers: Record<string, string> | undefined
   body: Buffer
@@ -121,7 +161,7 @@ async function routeRequest(route: WebRoute, url: string, method = 'GET'): Promi
       return response
     },
   } as unknown as ServerResponse
-  await route.handler({ method, url } as IncomingMessage, response)
+  await (await route).handler({ method, url } as IncomingMessage, response)
   return { status, headers, body }
 }
 
@@ -272,7 +312,7 @@ describe('client bundle activation', () => {
     },
   )
 
-  it('derives the browser module id from a file entry owning manifest', async () => {
+  it('derives the browser module id from a file entry owning manifest', () => {
     const packageName = '@fixture/file-entry'
     const clientPath = writePackage(packageName)
     const hostPath = join(dirname(clientPath), 'index.js')
@@ -280,7 +320,7 @@ describe('client bundle activation', () => {
     writeFileSync(hostPath, 'export default {}\n')
     writeFileSync(clientPath, 'module.exports = {}\n')
 
-    const service = await construct([pathToFileURL(hostPath).href])
+    const service = construct([pathToFileURL(hostPath).href])
 
     expect(service.clientPath(packageName)).toBe(clientPath)
     expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
@@ -405,7 +445,7 @@ describe('client bundle activation', () => {
     expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
   })
 
-  it('allows sibling dsh roles', async () => {
+  it('allows sibling dsh roles', () => {
     const currentName = '@fixture/current-client-field'
     const clientPath = writePackage(currentName, {
       dsh: {
@@ -416,15 +456,15 @@ describe('client bundle activation', () => {
     })
     mkdirSync(dirname(clientPath), { recursive: true })
     writeFileSync(clientPath, 'module.exports = {}\n')
-    expect((await construct([currentName])).graph().entries.map(entry => entry.id)).toEqual([currentName])
+    expect(construct([currentName]).graph().entries.map(entry => entry.id)).toEqual([currentName])
   })
 
-  it('groups missing bundles under one source-build instruction with a package/path list', async () => {
+  it('groups missing bundles under one source-build instruction with a package/path list', () => {
     const firstName = '@fixture/missing-first'
     const secondName = '@fixture/missing-second'
     const firstPath = writePackage(firstName)
     const secondPath = writePackage(secondName)
-    await expect(construct([firstName, secondName])).rejects.toThrow([
+    expect(() => construct([firstName, secondName])).toThrow([
       'client-modules: 2 client packages failed to compose:',
       '  client bundles not found; run `pnpm run build` before launch:',
       `    - package: ${firstName}`,
@@ -434,13 +474,13 @@ describe('client bundle activation', () => {
     ].join('\n'))
   })
 
-  it('does not report other bundle read failures as missing builds', async () => {
+  it('does not report other bundle read failures as missing builds', () => {
     const packageName = '@fixture/unreadable-client'
     const clientPath = writePackage(packageName)
     mkdirSync(clientPath, { recursive: true })
     let thrown: unknown
     try {
-      await construct([packageName])
+      construct([packageName])
     } catch (error) {
       thrown = error
     }
@@ -466,7 +506,86 @@ describe('client bundle activation', () => {
     })
 
     writeFileSync(`${clientPath}.map`, '{"version":3,"sources":[null]}\n')
-    await expect(construct([packageName])).resolves.toBeInstanceOf(ClientModuleRegistry)
+    expect(() => construct([packageName])).not.toThrow()
+
+    writeFileSync(`${clientPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sourceRoot: 'http://[',
+      sources: ['src/index.ts'],
+    }))
+    const invalidUrl = constructWithRoute([packageName])
+    const invalidMapUrl = mapUrl(invalidUrl.service.graph().batches[0]!.url)
+    expect(JSON.parse((await routeRequest(invalidUrl.route, invalidMapUrl)).body.toString('utf8'))).toMatchObject({
+      sections: [{ map: { sources: [`/plugins/${packageName}/client.js`] } }],
+    })
+  })
+
+  it('reads a source map only on its first map GET', async () => {
+    const packageName = '@fixture/lazy-source-map'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n//# sourceMappingURL=client.js.map')
+    writeFileSync(`${clientPath}.map`, '{')
+    const { service, route } = constructWithRoute([packageName])
+    const batch = service.graph().batches[0]!
+    const sourceMapUrl = mapUrl(batch.url)
+
+    const script = await routeRequest(route, batch.url)
+    expect(script.status).toBe(200)
+    expect((await routeRequest(route, sourceMapUrl, 'HEAD')).body).toHaveLength(0)
+    writeFileSync(`${clientPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['src/first.ts'],
+    }))
+    const first = await routeRequest(route, sourceMapUrl)
+    expect(JSON.parse(first.body.toString('utf8'))).toMatchObject({
+      sections: [{ map: { sources: [`/plugins/${packageName}/src/first.ts`] } }],
+    })
+
+    writeFileSync(`${clientPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['src/second.ts'],
+    }))
+    expect((await routeRequest(route, sourceMapUrl)).body).toEqual(first.body)
+    expect((await routeRequest(route, batch.url)).body).toEqual(script.body)
+  })
+
+  it('retains a materialized resource when an unrelated row recomposes the graph', async () => {
+    const stablePackage = '@fixture/stable-source-map'
+    const rebuiltPackage = '@fixture/rebuilt-neighbor'
+    const stablePath = writePackage(stablePackage)
+    const rebuiltPath = writePackage(rebuiltPackage)
+    for (const clientPath of [stablePath, rebuiltPath]) {
+      mkdirSync(dirname(clientPath), { recursive: true })
+      writeFileSync(clientPath, 'module.exports = {}\n//# sourceMappingURL=client.js.map')
+      writeFileSync(`${clientPath}.map`, JSON.stringify({
+        version: 3,
+        names: [],
+        mappings: 'AAAA',
+        sources: ['src/first.ts'],
+      }))
+    }
+    const { service, route } = constructWithRoute([stablePackage, rebuiltPackage])
+    const stableUrl = service.graph().entries.find(entry => entry.id === stablePackage)!.url
+    const stableMapUrl = mapUrl(stableUrl)
+    const first = await routeRequest(route, stableMapUrl)
+
+    writeFileSync(`${stablePath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['src/second.ts'],
+    }))
+    writeFileSync(rebuiltPath, 'module.exports = { rebuilt: true }\n')
+    service.rebuilt(rebuiltPackage)
+
+    expect((await routeRequest(route, stableMapUrl)).body).toEqual(first.body)
   })
 
   it('maps packed combo sections back to each generated client bundle', async () => {
@@ -538,13 +657,13 @@ describe('client bundle activation', () => {
     expect((await routeRequest(route, third)).status).toBe(200)
   })
 
-  it('assigns opaque startup revisions instead of deriving them from artifact content', async () => {
+  it('assigns opaque startup revisions instead of deriving them from artifact content', () => {
     const firstName = '@fixture/startup-revision-first'
     const secondName = '@fixture/startup-revision-second'
     writeBuiltPackage(firstName, {})
     writeBuiltPackage(secondName, {})
 
-    const service = await construct([firstName, secondName])
+    const service = construct([firstName, secondName])
     const [first, second] = service.graph().entries
     const firstMatch = /^(?<nonce>[a-f\d]{16})-(?<sequence>\d+)$/.exec(first!.rev)
     const secondMatch = /^(?<nonce>[a-f\d]{16})-(?<sequence>\d+)$/.exec(second!.rev)
@@ -628,6 +747,10 @@ describe('client bundle activation', () => {
     expect(batchScript.status).toBe(200)
     expect(batchScript.headers?.['cache-control']).toBe('public, max-age=31536000, immutable')
     expect(batchScript.body.toString('utf8')).toContain(`//# sourceMappingURL=${mapUrl(batch.url)}`)
+    const shellResponse = await service.fetchBundle(new Request(`dsh-app://app${batch.url}`))
+    expect(shellResponse.status).toBe(200)
+    expect(shellResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    expect(await shellResponse.text()).toBe(batchScript.body.toString('utf8'))
     expect((await routeRequest(route, batch.url, 'HEAD')).body).toHaveLength(0)
     expect((await routeRequest(route, batch.url, 'POST')).status).toBe(405)
     const batchMap = await routeRequest(route, mapUrl(batch.url))
@@ -749,10 +872,10 @@ function emitLoaderEntryChange(context: Context, name: string): void {
 }
 
 describe('shared module declarations', () => {
-  it('accepts external requests and carries them onto the graph row', async () => {
+  it('accepts external requests and carries them onto the graph row', () => {
     const packageName = '@fixture/shared-declared'
     writeBuiltPackage(packageName, { external: ['react'] })
-    expect((await construct([packageName])).graph().entries).toEqual([{
+    expect(construct([packageName]).graph().entries).toEqual([{
       id: packageName,
       url: expect.stringContaining(`/plugins/??${packageName}/client.js&rev=`) as unknown as string,
       rev: expect.any(String) as unknown as string,
@@ -760,18 +883,18 @@ describe('shared module declarations', () => {
     }])
   })
 
-  it('omits external when the package declares no requests', async () => {
+  it('omits external when the package declares no requests', () => {
     const packageName = '@fixture/shared-absent'
     writeBuiltPackage(packageName, {})
-    const [row] = (await construct([packageName])).graph().entries
+    const [row] = construct([packageName]).graph().entries
     expect(row).not.toHaveProperty('external')
   })
 
-  it('rejects a non-array external', async () => {
+  it('rejects a non-array external', () => {
     const packageName = '@fixture/external-not-array'
     writeBuiltPackage(packageName, { external: 'react' })
-    await expect(construct([packageName]))
-      .rejects.toThrow(`client-modules: ${packageName} dsh.client.external must be a string array`)
+    expect(() => construct([packageName]))
+      .toThrow(`client-modules: ${packageName} dsh.client.external must be a string array`)
   })
 })
 
@@ -823,19 +946,19 @@ describe('module graph order', () => {
       .toThrow('client-modules: "solo" requests module "solo" that it answers itself')
   })
 
-  it('composes the served graph in module-graph order', async () => {
+  it('composes the served graph in module-graph order', () => {
     const consumerName = '@fixture/order-consumer'
     const dependencyName = '@fixture/order-dependency'
     writeBuiltPackage(consumerName, { external: [dependencyName] })
     writeBuiltPackage(dependencyName, {})
-    expect(ids((await construct([consumerName, dependencyName])).graph().entries))
+    expect(ids(construct([consumerName, dependencyName]).graph().entries))
       .toEqual([dependencyName, consumerName])
   })
 
-  it('fails activation loud when scanned packages form a module cycle', async () => {
+  it('fails activation loud when scanned packages form a module cycle', () => {
     writeBuiltPackage('@fixture/cycle-a', { external: ['@fixture/cycle-b'] })
     writeBuiltPackage('@fixture/cycle-b', { external: ['@fixture/cycle-a'] })
-    await expect(construct(['@fixture/cycle-a', '@fixture/cycle-b']))
-      .rejects.toThrow('module graph cycle @fixture/cycle-a -> @fixture/cycle-b -> @fixture/cycle-a')
+    expect(() => construct(['@fixture/cycle-a', '@fixture/cycle-b']))
+      .toThrow('module graph cycle @fixture/cycle-a -> @fixture/cycle-b -> @fixture/cycle-a')
   })
 })

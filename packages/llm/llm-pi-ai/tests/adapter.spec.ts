@@ -4,7 +4,7 @@ import { AttachmentId, AttachmentStore, ImageVariantId } from '@deepseek-ai/dsh-
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  ImageRequestPolicy,
+  ImageRequestTarget,
   RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
@@ -135,14 +135,14 @@ describe('PiAiAdapter provider routing', () => {
       thinkingBudgets: { high: 2048 },
     })
     await assemble(ctx, {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       messages: [],
       temperature: 0.2,
       maxTokens: 77,
       sessionId: 'session-for-pi' as never,
     })
     expect(server.requests[0]).toMatchObject({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       temperature: 0.2,
       max_tokens: 77,
       thinking: { type: 'enabled' },
@@ -254,7 +254,7 @@ describe('PiAiAdapter provider routing', () => {
       Promise.resolve({ ref, data: Uint8Array.of(1) }))
     const readImageRequest = vi.fn((
       value: ImageAttachmentRef,
-      _policy: ImageRequestPolicy,
+      _target: ImageRequestTarget,
       _signal?: AbortSignal,
     ): Promise<RequestImageAttachment> => (
       Promise.resolve({
@@ -299,7 +299,7 @@ describe('PiAiAdapter provider routing', () => {
 
       override readImageRequest(
         value: ImageAttachmentRef,
-        policy: ImageRequestPolicy,
+        policy: ImageRequestTarget,
         signal?: AbortSignal,
       ): Promise<RequestImageAttachment> {
         return readImageRequest(value, policy, signal)
@@ -325,7 +325,8 @@ describe('PiAiAdapter provider routing', () => {
 
     expect(result.finish.kind).toBe('error')
     expect(readImageRequest).toHaveBeenCalledWith(ref, {
-      maxPixels: 2048 * 2048,
+      width: 1,
+      height: 1,
       maxBytes: 1024 * 1024,
     }, expect.any(AbortSignal))
     expect(JSON.stringify(server.requests[0])).toContain(MODEL_IMAGE_PATH)
@@ -834,6 +835,15 @@ describe('provider profile lifecycle', () => {
       .toBe(DEFAULT_MAX_REQUEST_IMAGE_BYTES)
     expect(resolveProfiles({ openai: { maxRequestImageBytes: 1024 } }).get('openai')?.maxRequestImageBytes)
       .toBe(1024)
+  })
+
+  it.each([
+    ['bad header name', 'value'],
+    ['x-company', 'line\nbreak'],
+    ['x-company', '部署'],
+  ])('rejects provider header %j when Fetch cannot represent the entry', (name, value) => {
+    expect(() => resolveProfiles({ openai: { headers: { [name]: value } } }))
+      .toThrow(`provider "openai" header "${name}" is not valid for Fetch`)
   })
 
   it.each(['maxRetries', 'maxRetryDelayMs'] as const)(

@@ -1,6 +1,6 @@
 /** Provider-neutral webhook deliveries, rules, and Session requests. */
 
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WebhookDeliveryId, WebhookRuleId, WebhookSourceId } from './brand.ts'
 
 /** Provider adapters add their normalized event type through declaration merging. */
@@ -16,7 +16,7 @@ export interface VerifiedWebhookDelivery<K extends string = string> {
   readonly kind: K
   /** Configured adapter instance such as `primary-github`. */
   readonly source: WebhookSourceId
-  /** Provider identity exposed as provenance, never as built-in deduplication state. */
+  /** Provider delivery identifier exposed in message sources, never as built-in deduplication state. */
   readonly deliveryId: WebhookDeliveryId
   /** Provider-normalized lossless JSON. */
   readonly event: WebhookEventOf<K>

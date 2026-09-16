@@ -2,21 +2,22 @@
 
 English | [中文](README.zh.md)
 
-The `dsh` command is the sole supported Node application launcher: profiles are ordered stacks of plugin-bundle patch layers under the user's own overrides. SDK and ACP are profiles, not separate public bins. The Python runtime wheel packages this same command; the SDK defaults to `sdk`, and the minimal example selects `sdk-minimal`. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+The `dsh` command is the sole supported Node application launcher: profiles are ordered stacks of plugin-bundle patch layers under the user's own overrides. SDK and ACP are profiles, not separate public bins. The Python runtime wheel packages this same command; the SDK defaults to `sdk`, and the minimal example selects `sdk-minimal`. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, and fatal configuration or boot failures exit nonzero.
 
 ## Entry modes
 
 | Command | Purpose |
 |---|---|
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
+| `dsh --profile <name> --from-default-profile <template>` | Create a new custom profile from a shipped template, then boot it. |
 | `dsh --profile acp` | Serve automation clients over ACP stdio until disconnect. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh --profile sdk` | Serve SDK clients over JSON-RPC stdio until shutdown or disconnect. |
 | `dsh --profile sdk-minimal` | Serve SDK clients with the standalone minimal agent tree. |
 | `dsh web` | Alias of `--profile web`. |
-| `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins with the CLI's pinned pnpm in the profile directory. |
+| `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
 
-The invoking directory is the default workspace root. The `web`, `headless`, `sdk`, `sdk-minimal`, and `acp` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+The invoking directory is the default workspace root. The `web`, `headless`, `sdk`, `sdk-minimal`, and `acp` profiles auto-initialize on first use from shipped templates. Create another profile at an unused, non-shipped name with `--from-default-profile`, or initialize a base-backed profile through `dsh plugin`. The `desktop` name is reserved for the Electron-owned profile, so the CLI rejects boot, config-dump, and plugin-management requests for it.
 
 ## App arguments
 
@@ -42,11 +43,9 @@ The tree composes over an empty root:
 
 Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`, `@deepseek-ai/dsh-sdk-app`, `@deepseek-ai/dsh-sdk-minimal`, `@deepseek-ai/dsh-acp-app`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
 
-At boot, bare plugin rows resolve from that profile's `node_modules` and then the healed installation dependency closure at `$DSH_HOME/profiles/node_modules`. Node and Electron use the same profile-anchored search order, independent of workspace hoisting or the packaged desktop layout.
-
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 
-The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.
+The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution. The [startup and reload failure table](../../packages/boot/app-boot/README.md#startup-and-reload-failures) compares optional and required plugin failures with configuration HMR.
 
 ## Optional overlays
 
@@ -56,4 +55,4 @@ The [CLI behavior reference](reference/README.md) owns exact layer precedence, f
 
 Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
 
-The exported `@deepseek-ai/dsh/profile-boot` entry lets another application reuse profile composition without invoking the CLI parser. `runProfile` watches profile patches and uses the `{ kind: 'process' }` lifecycle by default; GUI embedders may set `watchConfig: false` when their loader cannot support config HMR and pass `lifecycle: { kind: 'caller', attach, requestExit }` when their native application owns shutdown. `attach` receives the bounded shutdown before profile boot can yield, while an in-profile `appExit` calls `requestExit`. Caller-owned shutdown never changes process exit state; a request during startup waits for the profile Context to be published before disposing it, and disposal failure or timeout rejects to the caller, leaving quit, failure, or installer handoff to the embedder. The [desktop application](../desktop/README.md) is the shipped embedder.
+The [Web failure matrix](tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts) runs the built CLI through startup failures and native configuration HMR with `awaitWriteFinish` enabled in `test:expected`. It verifies authenticated HTTP responses, diagnostics, recovery, process exits, and disposal without model API calls; the [startup acceptance](tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts) also covers the shipped required Web dependencies and port conflicts.

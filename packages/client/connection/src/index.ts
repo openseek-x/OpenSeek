@@ -10,6 +10,7 @@ import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority } from './api-request-trust.ts'
 import { BrowserAuth } from './browser-auth.ts'
 import { HostConnectionService } from './rpc-host.ts'
+import { ConnectionRecoveryConfigSchema, resolveConnectionConfig, type ConnectionRecoveryConfig } from './recovery-config.ts'
 
 export type {
   ConnectionFetchMethod,
@@ -22,13 +23,9 @@ export type {
   ConnectionRpcHandler,
   ConnectionRequestRejection,
   ConnectionRpcResult,
+  ConnectionRequestBodyMode,
   ConnectionTrustRequest,
   ClientRequest,
-  DesktopConnectionBridge,
-  DesktopRequest,
-  DesktopResponse,
-  DesktopStreamRequest,
-  DesktopStreamSink,
   HostConnectionHandle,
   HostConnectionFetch,
   HostConnectionRpc,
@@ -68,44 +65,13 @@ function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): voi
   }
 }
 
-/**
- * Create the Host Connection registry without choosing a physical carrier.
- *
- * Web composition subsequently mounts this registry on an HTTP route, while
- * trusted in-process surfaces such as Electron dispatch the same Fetch handler
- * directly. Keeping that decision outside the registry prevents a desktop
- * build from opening a loopback server merely to satisfy the browser carrier.
- * @param ctx - Host plugin context carrying credentials and optional attachments.
- * @param config - resolved deployment configuration, with schema defaults when omitted.
- * @returns the context-provided Host Connection registry.
- */
-export async function createHostConnection(
-  ctx: Context,
-  config?: ConnectionConfig,
-): Promise<HostConnectionService> {
-  const trustedHosts = config?.trustedHosts ?? []
-  const cookieMaxAgeDays = config?.cookieMaxAgeDays ?? 30
-  const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
-  // Config boundary: a malformed entry fails the load loudly here rather than
-  // silently authorizing its hostname prefix at request time.
-  for (const entry of trustedHosts) assertTrustedAuthority(entry)
-  assertImageBodyCapacity(ctx, maxRequestBodyBytes)
-  const connection = new HostConnectionService(
-    ctx,
-    trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
-  )
-  ctx.inject(['attachments'], (attachmentCtx) => {
-    assertImageBodyCapacity(attachmentCtx, maxRequestBodyBytes)
-  })
-  return connection
-}
-
 /** Services required before providing Connection. */
-export const inject = ['webServer', 'credentials']
+export const inject = ['credentials']
 
-/** Plugin config: the deployment's non-loopback serving authorities. */
+/** Browser authentication, request limits, and connection recovery configuration. */
 export interface ConnectionConfig {
+  /** Browser recovery timing, injected into each served page. */
+  recovery?: ConnectionRecoveryConfig
   /**
    * Authorities this deployment serves beyond loopback: exact `host:port`, or
    * port-less `host` matching any port. The /api trust fence refuses any
@@ -122,35 +88,56 @@ export interface ConnectionConfig {
 }
 
 export const Config: z<ConnectionConfig> = z.object({
+  recovery: ConnectionRecoveryConfigSchema.default({}),
   trustedHosts: z.array(String).default([]),
   cookieMaxAgeDays: z.natural().min(1).default(30),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
 })
 
 /**
- * Mounts the API gateway under the browser transport prefix. Every request on
- * the prefix passes the Host/Origin browser-trust fence and persistent browser
- * authentication before dispatch.
+ * Provides carrier-neutral RPC and Fetch registries. When `webServer` is
+ * present, the plugin also mounts the `/api` browser transport with Host/Origin
+ * checks and persistent browser authentication.
  * @param ctx - Host plugin context.
  * @param config - resolved plugin config (schema defaults applied).
  */
 export async function apply(ctx: Context, config?: ConnectionConfig): Promise<void> {
+  const recovery = resolveConnectionConfig(config?.recovery)
   // The Loader resolves schema defaults; hand-built test contexts may pass none.
+  const trustedHosts = config?.trustedHosts ?? []
+  const cookieMaxAgeDays = config?.cookieMaxAgeDays ?? 30
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
-  const connection = await createHostConnection(ctx, config)
-  const fetchHandler = connection.createSharedFetchHandler(API_PATH)
-  const route: WebRoute = {
-    kind: 'prefix',
-    path: API_PATH,
-    handler: async (req, res) => {
-      const rejection = connection.requestRejection(req)
-      if (rejection !== undefined) {
-        res.writeHead(rejection)
-        res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
-        return
-      }
-      await bridge(req, res, fetchHandler, maxRequestBodyBytes)
-    },
-  }
-  ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
+  // Config boundary: a malformed entry fails the load loudly here rather than
+  // silently authorizing its hostname prefix at request time.
+  for (const entry of trustedHosts) assertTrustedAuthority(entry)
+  assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  const connection = new HostConnectionService(
+    ctx,
+    trustedHosts,
+    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
+  )
+  ctx.inject(['webServer'], (webCtx) => {
+    assertImageBodyCapacity(webCtx, maxRequestBodyBytes)
+    webCtx.on('webserver/index-inject', (table) => {
+      table.push({ kind: 'global', name: '__DSH_CONNECTION_RECOVERY__', value: recovery })
+    })
+    const fetchHandler = connection.createSharedFetchHandler(API_PATH)
+    const route: WebRoute = {
+      kind: 'prefix',
+      path: API_PATH,
+      handler: async (req, res) => {
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
+        await bridge(req, res, fetchHandler, maxRequestBodyBytes)
+      },
+    }
+    webCtx.effect(() => webCtx.webServer.register(route), 'client-connection: /api route')
+  })
+  ctx.inject(['attachments'], (attachmentCtx) => {
+    assertImageBodyCapacity(attachmentCtx, maxRequestBodyBytes)
+  })
 }

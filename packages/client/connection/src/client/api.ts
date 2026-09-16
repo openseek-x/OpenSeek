@@ -2,8 +2,6 @@
 
 export type {
   ClientRequest,
-  RpcError,
-  RpcErrorCode,
   RpcMessage,
   RpcRequest,
   RpcResponse,
@@ -18,8 +16,8 @@ export type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm/types'
 import type { RpcResponse, RpcResult } from '../rpc.ts'
 
 /**
- * Return the business result carried by a narrow fixture response.
- * @param response - fixture response to unwrap.
+ * Return the business result carried by an RPC response.
+ * @param response - RPC response to unwrap.
  * @returns the response's business result.
  */
 export function resultOf<T>(response: RpcResponse<T>): RpcResult<T> {

@@ -2,6 +2,7 @@
 
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
+import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   WorkspaceArchiveSessionRequest,
@@ -12,6 +13,7 @@ import type {
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
   WorkspaceId,
   WorkspaceView,
@@ -62,6 +64,8 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private orderFrameGeneration = 0
   /** Last complete order accepted from a baseline, increment, or current unary echo. */
   private committedOrder: WorkspaceId[] = []
+  /** Latest archive-set request; a later request or a pushed set supersedes it. */
+  private archiveRequestSeq = 0
   /** Host Workspace ids are never reused, so delayed data cannot resurrect a removed row. */
   private readonly removedIds = new Set<WorkspaceId>()
   private readonly listeners = new Set<() => void>()
@@ -82,12 +86,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @returns generated Remote result.
    */
   async create(input: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
-    let result: RemoteResult<WorkspaceCreateValue>
-    try {
-      result = await this.remote.create(input)
-    } catch (error) {
-      result = failureResult(error)
-    }
+    const result = await this.remote.create(input)
     if (result.ok) this.upsert(result.value.workspace)
     return result
   }
@@ -129,19 +128,10 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     const frameGeneration = this.orderFrameGeneration
     const localOrder = this.items.map(workspace => workspace.workspaceId)
     this.installOrder(insertIdBefore(localOrder, workspaceId, beforeWorkspaceId))
-    let result: RemoteResult<WorkspaceOrderValue>
-    try {
-      result = await this.remote.insertBefore({
-        workspaceId,
-        ...beforeWorkspaceId === undefined ? {} : { beforeWorkspaceId },
-      })
-    } catch (error) {
-      if (requestGeneration === this.orderRequestGeneration
-        && frameGeneration === this.orderFrameGeneration) {
-        this.installOrder(this.committedOrder)
-      }
-      throw error
-    }
+    const result = await this.remote.insertBefore({
+      workspaceId,
+      ...beforeWorkspaceId === undefined ? {} : { beforeWorkspaceId },
+    })
     if (requestGeneration === this.orderRequestGeneration
       && frameGeneration === this.orderFrameGeneration) {
       this.installOrder(result.ok ? result.value.workspaceIds : this.committedOrder, result.ok)
@@ -172,14 +162,35 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
 
   /**
    * Archive one Session and install the returned complete archive set.
+   * A reply superseded by a later archive request or a pushed set installs nothing.
    * @param sessionId - Session to archive.
    * @returns generated Remote result.
    */
   async archiveSession(
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestSeq = ++this.archiveRequestSeq
     const result = await this.remote.archiveSession({ sessionId })
-    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    if (result.ok && requestSeq === this.archiveRequestSeq) {
+      this.installArchived(result.value.archivedSessionIds)
+    }
+    return result
+  }
+
+  /**
+   * Unarchive one Session and install the returned complete archive set.
+   * A reply superseded by a later archive request or a pushed set installs nothing.
+   * @param sessionId - Session to unarchive.
+   * @returns generated Remote result.
+   */
+  async unarchiveSession(
+    sessionId: WorkspaceUnarchiveSessionRequest['sessionId'],
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestSeq = ++this.archiveRequestSeq
+    const result = await this.remote.unarchiveSession({ sessionId })
+    if (result.ok && requestSeq === this.archiveRequestSeq) {
+      this.installArchived(result.value.archivedSessionIds)
+    }
     return result
   }
 
@@ -189,6 +200,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    */
   replaceBaseline(baseline: WorkspaceBaseline): void {
     this.orderFrameGeneration++
+    this.archiveRequestSeq++
     this.installViews(baseline.items)
     this.installArchived(baseline.archivedSessionIds)
     this.state = 'idle'
@@ -218,6 +230,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param archivedSessionIds - complete Host-confirmed archive set.
    */
   replaceArchived(archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']): void {
+    this.archiveRequestSeq++
     this.installArchived(archivedSessionIds)
   }
 
@@ -233,8 +246,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param error - terminal stream failure.
    */
   handleStreamFailure(error: unknown): void {
+    if (!isRemoteFailure(error)) throw error
     this.state = 'error'
-    this.error = failureOf(error)
+    this.error = error
     this.invalidate()
   }
 
@@ -368,16 +382,4 @@ function insertIdBefore(
   const without = ids.filter(candidate => candidate !== id)
   const at = beforeId === undefined ? without.length : without.indexOf(beforeId)
   return [...without.slice(0, at), id, ...without.slice(at)]
-}
-
-function failureResult<T>(error: unknown): RemoteResult<T> {
-  return { ok: false, error: failureOf(error) }
-}
-
-function failureOf(error: unknown): RemoteFailure {
-  return {
-    code: 'internal',
-    message: error instanceof Error ? error.message : String(error),
-    details: {},
-  }
 }

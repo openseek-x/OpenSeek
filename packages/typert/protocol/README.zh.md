@@ -46,11 +46,26 @@ export class GoalService extends TypertRemoteService {
 
 ### 把 Host 对象与 Context 关联到 wire identity
 
-复杂的 Host 对象不能直接跨 wire 传输。业务包通过可合并扩展的 `TypertLookupMap` 与 `TypertContextMap` 声明关联。Host 与 Client Context adapter 都把 `Context` 映射为 wire identity，也把该 identity 映射回 `Context`；Host adapter 还拥有稳定 wire 声明。Host 组合可以覆盖其同步或异步 resolver。策略拒绝可以抛出 `TypertLookupFailure`，把适配器拥有的失败值带给调用方。
+复杂的 Host 对象不能直接跨 wire 传输。业务包通过可合并扩展的 `TypertLookupMap` 与 `TypertContextMap` 声明关联。Host Context 适配器拥有稳定 wire 声明，并把 wire identity 解析为活跃 Context。Client Context 适配器需要双向映射，因为作用域调用从 Client Context 发起，而转发的 Host 事件要在 Client 侧解析其显式 wire identity。Host 组合可以覆盖其同步或异步解析器。因策略原因拒绝解析的解析器会抛出带有自身错误码的 `RemoteError`，该码原样到达调用方。
+
+### 报告与读取 Remote 失败
+
+所有 Remote 失败都由一个类承载：`RemoteError`，携带稳定的 `<domain>/<reason>` 码，以及按该码定型的 details。本包声明通用载体码（`gateway/bad-request`、`gateway/cancelled`、`gateway/internal`），并拥有 `RemoteErrorDetailsMap`——可合并扩展的码表，其他每个包都在自己的抛出点旁扩展它：
+
+```text
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'goal/not-found': { readonly goalId: string }
+  }
+}
+throw new RemoteError('goal/not-found', `goal "${id}" does not exist`, { goalId: id })
+```
+
+拥有方在失败点直接抛出；没有任何包再写错误类家族或出口映射函数。调用方按 `code` 判别——绝不用 `instanceof`——且 `code` 分支无需 cast 即收窄 `details`，因为 `RemoteFailure` 就是 `RemoteError` 实例按码判别的 union。需要识别跨模块或跨 realm 类副本传来的失败时，基础设施调用 `remoteErrorOf(value)`，它读结构标记而不是原型链。
 
 ### 在 Client 侧接收转发的 Host 事件
 
-Host 装配以转发给消费端的 Cordis 事件扩展 `TypertRemoteEventSelection`，从而收窄 `ctx.remote.$on` 的键集。`TypertForwardableEvent` 接受无作用域且返回 `void` 的通知，以及最后一个 `next()` 回调返回事件结果类型的异步作用域 waterfall。`TypertClientEventListener` 从同一条 `Events` 成员派生 Client listener，并保留 signal、可选和只读字段、数组、回调与结果类型。`TypertClientRemote` 只公开 `$mount()` 与 `$on()`；事件传输仍由 Gateway 私有持有。
+Host 装配以转发给消费方的 Cordis 事件扩展 `TypertRemoteEventSelection`，从而收窄 `ctx.remote.$on` 的键集。`TypertForwardableEvent` 接受无作用域且返回 `void` 的通知，以及最后一个 `next()` 回调返回事件结果类型的异步作用域 waterfall（瀑布式事件）。`TypertClientEventListener` 从同一条 `Events` 成员派生 Client listener，并保留 signal、可选和只读字段、数组、回调与结果类型。`TypertClientRemote` 只公开 `$mount()` 与 `$on()`；事件传输仍由 Gateway 私有持有。
 
 -----
 
@@ -64,11 +79,11 @@ Host 装配以转发给消费端的 Cordis 事件扩展 `TypertRemoteEventSelect
 
 ### 设计理念
 
-本包把反射留在编译器之外：装饰器初始化器在模块私有的、以服务原型为键的 `WeakMap` 中保留标记，不添加构造函数符号、原型属性、参数元数据或运行时反射字段。完整的参数、结果、查找与 schema 反射是 Typert 构建流水线的职责，通过 `InvocationDescriptor` 交付。
+本包把严格反射留在编译器中：装饰器初始化器把最小标记保存在 Service 原型上的带版本描述符中。描述符使用稳定的字符串属性名，因此协议包的另一个已安装副本也能读取同一组标记。完整的参数、结果、查找与 schema 反射是 Typert 构建流水线的职责，通过 `InvocationDescriptor` 交付。
 
 ### Remote 标记
 
-`@Remote` 与 `@RemoteScope` 调度一个初始化器，记录方法名、可选导出名与调用模式；`remoteMethods(service)` 返回与内部状态分离、按声明顺序排列的快照，供 Gateway 的源码模式回退读取。标记要求公开、非静态、具名字符串的实例方法，同一方法上的冲突标记会被拒绝。
+`@Remote` 与 `@RemoteScope` 调度一个初始化器，把方法名、可选导出名与调用模式追加到原型描述符；`remoteMethods(service)` 校验其版本，并返回与已存描述符分离、按声明顺序排列的快照，供 Gateway 的源码模式回退读取。标记要求名称为字符串的公开、非静态实例方法，同一方法上的冲突标记会被拒绝。
 
 ### 协议映射与描述符
 
@@ -76,15 +91,16 @@ Host 装配以转发给消费端的 Cordis 事件扩展 `TypertRemoteEventSelect
 
 ### Wire 标识文法
 
-每个命名空间、方法、查找与 Context 段都必须满足 `isTypertRemoteSegment()`，生成的名字才能原样跨共享 RPC 载体传输。严格编解码器携带生成的 schema；`src-json` 编解码器标识约束更弱的源码启动路径。
+每个命名空间、方法、查找与 Context 段都必须满足 `isTypertRemoteSegment()`，生成的名字才能原样跨共享 RPC 载体传输。严格编解码器携带生成的 schema factory；`src-json` 编解码器标识约束更弱的源码启动路径。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 装饰器、Gateway 绑定、`remoteMethods`、段校验、`TypertLookupFailure` |
-| [`src/types.ts`](src/types.ts) | 协议映射、`InvocationDescriptor`、编解码器、提供方约定、注册表接口、`TypertClientRemote` |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件 |
+| [`src/index.ts`](src/index.ts) | 装饰器、Gateway 绑定、`remoteMethods`、段校验 |
+| [`src/remote-error.ts`](src/remote-error.ts) | `RemoteError` 与结构式识别函数 `remoteErrorOf` |
+| [`src/types.ts`](src/types.ts) | 协议映射、`RemoteErrorDetailsMap`、`RemoteResult`、`InvocationDescriptor`、编解码器、提供方约定、注册表接口、`TypertClientRemote` |
+| — | 不发布运行时不变量伴生入口；decorator 只保留私有不可变声明，binding 也是冻结值，没有可供交叉核对的独立事件流。 |
 
 </details>
 

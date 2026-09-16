@@ -33,7 +33,7 @@ Choose this backend when a deployment wants DeepSeek's native server-side web se
 
 ### Minimal configuration
 
-Load the web service and the provider; the key resolves from `ctx.credentials` when that service is mounted, otherwise from the process environment. The search endpoint uses the Anthropic-compatible base (`https://api.deepseek.com/anthropic/v1`), distinct from the chat-completions base the LLM adapter uses — never reuse `$DEEPSEEK_BASE_URL`.
+Load the web service and the provider; the key resolves from `ctx.credentials` when that service is mounted, otherwise from the process environment. The auxiliary search call has its own endpoint setting and uses the Anthropic-compatible base `https://api.deepseek.com/anthropic/v1`, with `/messages` appended. It reads `$DEEPSEEK_SEARCH_BASE_URL`, independently of the conversation adapter’s `$DEEPSEEK_BASE_URL` and protocol.
 
 ```yaml
 - name: '@deepseek-ai/dsh-web'
@@ -57,7 +57,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### What a search returns
 
-`content` is always omitted: DeepSeek's provider prose is not trusted as an answer. `sources[]` comes from `web_search_result` items inside `web_search_tool_result` blocks — `url`, `title`, and `publishedAt` from `page_age` — with snippets joined from URL-keyed `cited_text` entries where an excerpt exists. Results are deduplicated by URL, and because DeepSeek exposes no result-count knob, the service enforces `maxResults` by truncating and flagging.
+`content` is always omitted: DeepSeek's provider prose is not trusted as an answer. `sources[]` comes from `web_search_result` items inside `web_search_tool_result` blocks — `url` and `title` directly, and `publishedAt` from `page_age` — with snippets joined from URL-keyed `cited_text` entries where an excerpt exists. Results are deduplicated by URL, and because DeepSeek exposes no result-count knob, the service enforces `maxResults` by truncating and flagging.
 
 ### Request logging
 
@@ -65,7 +65,7 @@ A search running under an initiating agent appends the log-only `web/deepseek-se
 
 ### Failures and recovery
 
-Failures throw `WebError` with a machine-routable code: a missing credential is `WEB_PROVIDER_CREDENTIAL_MISSING`, caller cancellation is `WEB_ABORTED`, and provider or transport failures — including a response with no `web_search_tool_result` block — are `WEB_PROVIDER_ERROR`. HTTP redirects are rejected before the `Location` target is contacted. The model-facing `web_search` tool surfaces failure text to the model under its own error wrapper.
+Failures throw `WebError` with a machine-routable code: a missing credential is `WEB_PROVIDER_CREDENTIAL_MISSING`, caller cancellation is `WEB_ABORTED`, and provider or transport failures — including a response with no `web_search_tool_result` block — are `WEB_PROVIDER_ERROR`. HTTP redirects are rejected before the `Location` target is contacted. Every failure after dispatch names the resolved search endpoint and explains that search endpoint configuration is separate from chat. If the endpoint is unintended, the message tells the conversation model to guide the user to the Endpoint field under Settings > Plugins > Plugin configuration > Web search and save the change. When that page is unavailable, it names `DEEPSEEK_SEARCH_BASE_URL` and `web-search-deepseek.baseURL` as deployment configuration alternatives. The model must not choose or change the endpoint. The model-facing `web_search` tool surfaces this text under its own error wrapper.
 
 -----
 
@@ -82,7 +82,7 @@ This section explains the design decisions behind the provider; the observable b
 The provider is built on two commitments:
 
 - **Structured blocks only.** DeepSeek runs the search server-side and returns structured `web_search_tool_result` blocks; the provider parses those blocks and never scrapes URLs out of model prose. In strict mode, a response with no such block throws `WEB_PROVIDER_ERROR` instead of degrading.
-- **One credential, resolved per search.** The provider reuses the `DEEPSEEK_API_KEY` reference (no new secret) but not `$DEEPSEEK_BASE_URL`, because search speaks the Anthropic-compatible Messages API. A mounted credentials service is authoritative; without one the provider falls back to the launching process environment. Resolving per call means a key stored or rotated in the Web Models page reaches the next search without a restart.
+- **One credential, resolved per search.** The provider reuses the `DEEPSEEK_API_KEY` reference (no new secret) but keeps its auxiliary request endpoint independent through `$DEEPSEEK_SEARCH_BASE_URL`. A mounted credentials service is authoritative; without one the provider falls back to the launching process environment. Resolving per call means a key stored or rotated in the Web Models page reaches the next search without a restart.
 
 ### Source map
 
@@ -91,7 +91,7 @@ The provider is built on two commitments:
 | [`src/index.ts`](src/index.ts) | Plugin entry: config schema, Settings section installation, per-search option projection |
 | [`src/provider.ts`](src/provider.ts) | The `DeepSeekSearchProvider`: Messages request dispatch, block parsing, citation joining, credential resolution |
 | [`src/types.ts`](src/types.ts) | Anthropic wire types for the search response |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; contracts are enforced at the service) |
+| — | No runtime invariant companion is published; the package emits a pre-dispatch log event but owns no later authoritative dispatch event to relate it to. Exact envelope equality is pinned at the provider boundary instead. |
 
 ### Request flow
 
@@ -136,7 +136,7 @@ Independent of the conversation request cache. The auxiliary instruction and nat
 
 #### What the model sees
 
-Through `dsh-tool-web`, the conversation model sees deduplicated URLs, titles, dates, and citation snippets from structured search blocks; provider prose is not trusted as an answer. This provider's exact failures include the actionable missing-credential message, `DeepSeek search credential resolution failed: <error>`, `DeepSeek search aborted`, `DeepSeek search request failed: <error>`, `DeepSeek returned no web_search_tool_result blocks; the request may not have triggered native web search`, and `DeepSeek returned an unprocessable response body: <error>`; HTTP failures preserve the provider message. The consumer owns the error wrapper.
+Through `dsh-tool-web`, the conversation model sees deduplicated URLs, titles, dates, and citation snippets from structured search blocks; provider prose is not trusted as an answer. This provider's exact failures include the actionable missing-credential message, `DeepSeek search credential resolution failed: <error>`, and `DeepSeek search aborted`. Request, HTTP, native-search, and response-body failures append the resolved endpoint and the conditional configuration instruction described above. The consumer owns the error wrapper.
 
 #### Token effect
 
