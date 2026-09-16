@@ -1,60 +1,63 @@
-/** Shared structured-clone protocol between the Electron main process and preload. */
+/** Typed preload operations exposed only by the Electron shell. */
 
-export const IPC_FETCH = 'dsh:fetch'
-export const IPC_FETCH_CANCEL = 'dsh:fetch-cancel'
-export const IPC_STREAM_OPEN = 'dsh:stream-open'
-export const IPC_STREAM_CANCEL = 'dsh:stream-cancel'
-export const IPC_STREAM_EVENT = 'dsh:stream-event'
-export const IPC_SAVE_DOWNLOAD = 'dsh:save-download'
-export const IPC_UPDATE_GET_STATE = 'dsh:update:get-state'
-export const IPC_UPDATE_ACTION = 'dsh:update:action'
-export const IPC_UPDATE_STATE = 'dsh:update:state'
-export const IPC_WINDOW_DRAG_START = 'dsh:window-drag:start'
-export const IPC_WINDOW_DRAG_MOVE = 'dsh:window-drag:move'
-export const IPC_WINDOW_DRAG_END = 'dsh:window-drag:end'
+import type { DesktopPluginRecord } from './project-manager.ts'
+import type { DesktopLocale } from './locale.ts'
+import type { DesktopBackendState } from './backend-controller.ts'
 
-/** Upper bound shared with the default Connection HTTP carrier. */
-export const MAX_REQUEST_BODY_BYTES = 160 * 1024 * 1024
+/** IPC channel names kept private to the desktop application bundle. */
+export const DESKTOP_IPC = {
+  localeGet: 'dsh-desktop:locale-get',
+  pluginsList: 'dsh-desktop:plugins-list',
+  pluginsAdd: 'dsh-desktop:plugins-add',
+  pluginsRemove: 'dsh-desktop:plugins-remove',
+  pluginsUpdate: 'dsh-desktop:plugins-update',
+  pluginsToggle: 'dsh-desktop:plugins-toggle',
+  pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
+  backendStatus: 'dsh-desktop:backend-status',
+  backendRetry: 'dsh-desktop:backend-retry',
+  applicationRestart: 'dsh-desktop:application-restart',
+  configurationReset: 'dsh-desktop:configuration-reset',
+  backendState: 'dsh-desktop:backend-state',
+  updatesCheck: 'dsh-desktop:updates-check',
+  updatesInstall: 'dsh-desktop:updates-install',
+  updatesState: 'dsh-desktop:updates-state',
+} as const
 
-/** Request representation accepted from the isolated renderer. */
-export interface IpcRequest {
-  readonly id: string
-  readonly url: string
-  readonly method: string
-  readonly headers: [string, string][]
-  readonly body?: Uint8Array
+/** Desktop release update state rendered by desktop-owned UI. */
+export interface DesktopUpdateState {
+  readonly phase: 'idle' | 'checking' | 'available' | 'installing' | 'ready' | 'error'
+  readonly version?: string
+  readonly message?: string
 }
 
-/** Complete non-streaming response returned through invoke. */
-export interface IpcResponse {
-  readonly status: number
-  readonly statusText: string
-  readonly headers: [string, string][]
-  readonly body: Uint8Array
+/** Narrow bridge exposed through context isolation. */
+export interface DshDesktopApi {
+  readonly protocolVersion: 1
+  locale(): Promise<DesktopLocale>
+  readonly plugins: {
+    list(): Promise<readonly DesktopPluginRecord[]>
+    add(spec: string): Promise<void>
+    remove(name: string): Promise<void>
+    update(name: string, version: string): Promise<void>
+    toggle(name: string, enabled: boolean): Promise<void>
+    disableAll(): Promise<void>
+  }
+  readonly backend: {
+    status(): Promise<DesktopBackendState>
+    retry(): Promise<void>
+    subscribe(listener: (state: DesktopBackendState) => void): () => void
+  }
+  readonly updates: {
+    check(): Promise<DesktopUpdateState>
+    install(): Promise<void>
+    subscribe(listener: (state: DesktopUpdateState) => void): () => void
+  }
 }
 
-/** Typed Remote-stream request accepted from the isolated renderer. */
-export interface IpcStreamRequest {
-  readonly id: string
-  readonly endpoint: string
-  readonly payload: unknown
+/** Startup-page controls, unavailable to backend-provided application documents. */
+export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale'> {
+  readonly backend: Omit<DshDesktopApi['backend'], 'retry'>
+  disablePlugins(): Promise<void>
+  restart(): Promise<void>
+  resetConfiguration(): Promise<void>
 }
-
-/** Native-download request; the main process owns both Fetch and disk I/O. */
-export interface IpcDownloadRequest {
-  readonly id: string
-  readonly path: string
-  readonly filename: string
-}
-
-/** Pointer coordinates sent from preload while moving the native application window. */
-export interface IpcWindowDragPoint {
-  readonly screenX: number
-  readonly screenY: number
-}
-
-/** Main-to-preload events for one typed Remote stream. */
-export type IpcStreamEvent =
-  | { readonly id: string; readonly kind: 'data'; readonly value: unknown }
-  | { readonly id: string; readonly kind: 'end' }
-  | { readonly id: string; readonly kind: 'error'; readonly message: string }

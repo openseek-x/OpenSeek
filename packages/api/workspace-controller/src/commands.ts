@@ -8,7 +8,7 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
@@ -21,6 +21,7 @@ import type {
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -46,11 +47,12 @@ export class WorkspaceCommands {
         const workspace = await this.ctx.workspaceRegistry.create(request.path)
         return { workspace: workspaceView(workspace), created: true }
       } catch (error) {
-        if (error instanceof TypertRemoteFailure) throw error
-        throw failure(
-          'workspace-invalid-path',
+        if (remoteErrorOf(error) !== undefined) throw error
+        throw new RemoteError(
+          'workspace/invalid-path',
           `cannot create a Workspace at "${request.path}": ${errorMessage(error)}`,
           { path: request.path },
+          { cause: error },
         )
       }
     })
@@ -64,19 +66,15 @@ export class WorkspaceCommands {
   rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
     const title = request.title.trim()
     if (title === '') {
-      return Promise.reject(failure(
-        'bad-request',
-        'Workspace rename requires a non-blank title',
-        {},
-      ))
+      return Promise.reject(new RemoteError('gateway/bad-request', 'Workspace rename requires a non-blank title', {}))
     }
     return this.enqueue(async () => {
       const workspace = this.requireWorkspace(request.workspaceId)
       if (title !== workspace.title) {
         if (this.ctx.workspaceRegistry.list().some(candidate =>
           candidate.id !== workspace.id && candidate.title === title)) {
-          throw failure(
-            'workspace-name-conflict',
+          throw new RemoteError(
+            'workspace/name-conflict',
             `Workspace name '${title}' is already in use`,
             { name: title },
           )
@@ -132,8 +130,8 @@ export class WorkspaceCommands {
       await workspace.insertSessionBefore(request.sessionId, request.beforeSessionId)
     } catch (error) {
       if (!(error instanceof WorkspaceMoveInvalidError)) throw error
-      throw failure(
-        'workspace-move-invalid',
+      throw new RemoteError(
+        'workspace/move-invalid',
         error.message,
         {
           workspaceId: request.workspaceId,
@@ -142,6 +140,7 @@ export class WorkspaceCommands {
             ? {}
             : { beforeSessionId: request.beforeSessionId },
         },
+        { cause: error },
       )
     }
     return { workspace: workspaceView(workspace) }
@@ -157,8 +156,20 @@ export class WorkspaceCommands {
       await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
     } catch (error) {
       if (!(error instanceof WorkspaceUnknownSessionError)) throw error
-      throw failure('session-not-found', error.message, { sessionId: request.sessionId })
+      throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
     }
+    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+  }
+
+  /**
+   * Drop one Session from the registry-global archive set. An id that is not
+   * archived is not an error: the call is idempotent, so a lost race with
+   * another surface resolves as a no-op.
+   * @param request - Session identity to unarchive.
+   * @returns the complete resulting archive set.
+   */
+  async unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
     return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
   }
 
@@ -175,20 +186,12 @@ export class WorkspaceCommands {
   }
 }
 
-function workspaceNotFound(workspaceId: WorkspaceId): TypertRemoteFailure {
-  return failure(
-    'workspace-not-found',
+function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not-found'> {
+  return new RemoteError(
+    'workspace/not-found',
     `Workspace "${workspaceId}" not found`,
     { workspaceId },
   )
-}
-
-function failure(
-  code: string,
-  message: string,
-  details: object,
-): TypertRemoteFailure {
-  return new TypertRemoteFailure({ code, message, details })
 }
 
 function errorMessage(error: unknown): string {

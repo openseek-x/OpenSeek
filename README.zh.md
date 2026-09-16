@@ -44,16 +44,6 @@ pnpm dsh web
 
 `pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
 
-在 macOS、Windows 与 Linux 上，同一份源码还提供 Electron 应用：
-
-```sh
-pnpm run desktop
-pnpm run package:desktop
-pnpm run test:desktop:packaged
-```
-
-打包命令会面向当前宿主与架构构建，在 `dist-desktop/installers/` 下生成 macOS `.dmg`、Windows `.exe` 安装程序或 Linux `.tar.gz` 压缩包。每个打包后的应用还包含版本匹配且自包含的 [`dsh` companion](apps/desktop/README.zh.md#companion-cli)，用于管理 profile 与插件。CI 目标、无签名分发行为、传输机制、安全姿态与模型提供方支持见[桌面应用参考](apps/desktop/README.zh.md)。
-
 ## 社区与支持
 
 - 通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。
@@ -86,6 +76,18 @@ pnpm run test:desktop:packaged
 请先阅读[开发指南](docs/development.zh.md)与[架构文档](docs/architecture.zh.md)。
 
 面向 agent：请遵循 [AGENTS.md](AGENTS.md)。
+
+## 引用
+
+```bibtex
+@misc{deepseek-harness2026,
+  title={DeepSeek Harness: Everything is a Plugin},
+  author={DeepSeek-AI},
+  year={2026},
+  publisher={GitHub},
+  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
+}
+```
 
 ## 许可证
 

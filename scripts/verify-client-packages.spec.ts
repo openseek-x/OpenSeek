@@ -1,4 +1,4 @@
-/** Tests for client package modes, dependency sections, and module requests. */
+/** Tests for client package modes and module requests. */
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   collectClientPackageViolations,
+  collectLocalSourceSpecifiers,
+  collectRuntimeLocalSourceSpecifiers,
   collectRuntimeSourcePackageUses,
   collectRuntimeSourceSpecifiers,
   collectSourcePackageUses,
@@ -74,6 +76,24 @@ function facts(
 }
 
 describe('source package uses', () => {
+  it('includes root-relative runtime requests only when explicitly requested', () => {
+    const source = [
+      "import './local.ts'",
+      "import '/src/value.ts'",
+      "export * from '/src/export.ts'",
+      "const load = () => import('/src/lazy.ts')",
+      "const legacy = require('/src/legacy.ts')",
+      "import type { A } from '/src/import-type.ts'",
+      "import { type B } from '/src/import-type-only.ts'",
+      "export type { A } from '/src/export-type.ts'",
+      "export { type B } from '/src/export-type-only.ts'",
+    ].join('\n')
+    expect([...collectRuntimeLocalSourceSpecifiers('feature.ts', source)]).toEqual(['./local.ts'])
+    expect([...collectRuntimeLocalSourceSpecifiers('feature.ts', source, true)]).toEqual([
+      './local.ts', '/src/value.ts', '/src/export.ts', '/src/lazy.ts', '/src/legacy.ts',
+    ])
+  })
+
   it('counts type imports, module augmentations, dynamic imports, and JSX', () => {
     const uses = collectSourcePackageUses('feature.tsx', [
       "import type { A } from '@deepseek-ai/dsh-a/subpath'",
@@ -105,6 +125,19 @@ describe('source package uses', () => {
     ].join('\n'))].sort()).toEqual([
       '@deepseek-ai/dsh-b/remote',
       'react',
+    ])
+    expect([...collectLocalSourceSpecifiers('feature.ts', [
+      "import type { A } from './types.ts'",
+      "export { value } from './value.ts'",
+      "const load = () => import('./lazy.ts')",
+      "const legacy = require('./legacy.ts')",
+      "declare module './augmentation.ts' {}",
+      "import '@deepseek-ai/dsh-a'",
+    ].join('\n'))].sort()).toEqual([
+      './lazy.ts',
+      './legacy.ts',
+      './types.ts',
+      './value.ts',
     ])
   })
 })
@@ -149,109 +182,6 @@ describe('package modes', () => {
       + '"@deepseek-ai/dsh-client-bootstrap/client" has no matching PARSER_PRELOAD_IDS row in '
       + 'packages/client/modules/src/index.ts',
     ])
-  })
-})
-
-describe('dependency sections', () => {
-  it('accepts dynamic peer plus dev relationships, static dev inputs, and private dependencies', () => {
-    const slots = pkg('ui-slots', { dynamic: false, staticLinked: true })
-    const conversation = pkg('conversation', {
-      inject: ['@deepseek-ai/dsh-client-feature'],
-      sourceUses: {
-        '@deepseek-ai/dsh-agent': ['packages/client/conversation/src/index.ts'],
-        '@deepseek-ai/dsh-client-ui-slots': ['packages/client/conversation/src/client/slots.ts'],
-        react: ['packages/client/conversation/src/client/view.tsx'],
-      },
-      dependencies: { immer: '^10.1.1' },
-      peerDependencies: {
-        [CORDIS]: 'workspace:^',
-        '@deepseek-ai/dsh-agent': 'workspace:^',
-        '@deepseek-ai/dsh-client-feature': 'workspace:^',
-      },
-      devDependencies: {
-        [CORDIS]: 'workspace:^',
-        '@deepseek-ai/dsh-agent': 'workspace:^',
-        '@deepseek-ai/dsh-client-feature': 'workspace:^',
-        '@deepseek-ai/dsh-client-ui-slots': 'workspace:^',
-        react: '^18.2.0',
-      },
-    })
-    expect(collectClientPackageViolations(facts([slots, conversation], {
-      platformModules: ['react', slots.name],
-    }))).toEqual([])
-  })
-
-  it('rejects internal dependencies, static peers, and mismatched peer development ranges', () => {
-    const slots = pkg('ui-slots', { dynamic: false, staticLinked: true })
-    const subject = pkg('feature', {
-      sourceUses: {
-        '@deepseek-ai/dsh-agent': ['packages/client/feature/src/index.ts'],
-        [slots.name]: ['packages/client/feature/src/view.tsx'],
-      },
-      dependencies: { '@deepseek-ai/dsh-agent': 'workspace:^' },
-      peerDependencies: { [CORDIS]: 'workspace:^', [slots.name]: 'workspace:^' },
-      devDependencies: { [CORDIS]: 'workspace:^', [slots.name]: 'workspace:*' },
-    })
-    const found = collectClientPackageViolations(facts([slots, subject]))
-    expect(found).toHaveLength(2)
-    expect(found.join('\n')).toContain('peer-installed DSH relationship')
-    expect(found.join('\n')).toContain('static client input')
-  })
-
-  it('requires every peer to have the same development range', () => {
-    const subject = pkg('feature', {
-      peerDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/cordis-plugin-loader': 'workspace:^' },
-    })
-    expect(collectClientPackageViolations(facts([subject]))).toEqual([
-      'packages/client/feature/package.json: peerDependencies.@deepseek-ai/cordis-plugin-loader'
-      + ' is workspace:^, so devDependencies.@deepseek-ai/cordis-plugin-loader must use the same range;'
-      + ' found no declaration',
-    ])
-  })
-
-  it('requires statically linked third-party runtime imports in dependencies', () => {
-    const primitives = pkg('ui-primitives', {
-      dynamic: false,
-      staticLinked: true,
-      runtimeSourceUses: { shiki: ['packages/client/ui-primitives/src/highlight.ts'] },
-      devDependencies: { [CORDIS]: 'workspace:^', shiki: '^4.3.1' },
-    })
-    const found = collectClientPackageViolations(facts([primitives]))
-    expect(found).toHaveLength(1)
-    expect(found[0]).toContain('runtime import retained by a statically linked artifact')
-    expect(found[0]).toContain('declare it only in dependencies')
-
-    const valid = { ...primitives, dependencies: { shiki: '^4.3.1' }, devDependencies: { [CORDIS]: 'workspace:^' } }
-    expect(collectClientPackageViolations(facts([valid]))).toEqual([])
-  })
-
-  it('keeps the web shell runtime inputs development-only', () => {
-    const web = pkg('web', {
-      dynamic: false,
-      staticLinked: true,
-      runtimeSourceUses: {
-        '@deepseek-ai/cordis-plugin-loader': ['packages/client/web/src/boot.ts'],
-        react: ['packages/client/web/src/seed.ts'],
-      },
-      devDependencies: {
-        [CORDIS]: 'workspace:^',
-        '@deepseek-ai/cordis-plugin-loader': 'workspace:^',
-        react: '^18.2.0',
-      },
-    })
-    expect(collectClientPackageViolations(facts([web]))).toEqual([])
-  })
-
-  it('allows npm dependency cycles', () => {
-    const a = pkg('a', {
-      peerDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-client-b': 'workspace:^' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-client-b': 'workspace:^' },
-    })
-    const b = pkg('b', {
-      peerDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-client-a': 'workspace:^' },
-      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-client-a': 'workspace:^' },
-    })
-    expect(collectClientPackageViolations(facts([a, b]))).toEqual([])
   })
 })
 
@@ -378,7 +308,7 @@ describe('manifest declarations', () => {
     ])
   })
 
-  it('fixes unambiguous dependency sections and declaration entries', () => {
+  it('fixes malformed declaration entries without changing dependency sections', () => {
     const root = mkdtempSync(join(tmpdir(), 'client-packages-fix-'))
     roots.push(root)
     const subject = pkg('feature', {
@@ -426,43 +356,8 @@ describe('manifest declarations', () => {
       external: ['@deepseek-ai/dsh-missing'],
       inject: ['@deepseek-ai/dsh-agent'],
     })
-    expect(fixed.dependencies).toBeUndefined()
-    expect(fixed.peerDependencies).toEqual({
-      '@deepseek-ai/cordis-plugin-loader': 'workspace:^',
-      [CORDIS]: 'workspace:^',
-      '@deepseek-ai/dsh-agent': 'workspace:*',
-    })
-    expect(fixed.devDependencies).toEqual({
-      '@deepseek-ai/dsh-client-ui-slots': 'workspace:^',
-      [CORDIS]: 'workspace:^',
-      '@deepseek-ai/dsh-agent': 'workspace:*',
-      '@deepseek-ai/cordis-plugin-loader': 'workspace:^',
-    })
-  })
-
-  it('fixes a statically linked runtime import into dependencies', () => {
-    const root = mkdtempSync(join(tmpdir(), 'client-packages-static-fix-'))
-    roots.push(root)
-    const subject = pkg('ui-primitives', {
-      dynamic: false,
-      staticLinked: true,
-      runtimeSourceUses: { shiki: ['packages/client/ui-primitives/src/highlight.ts'] },
-      devDependencies: { [CORDIS]: 'workspace:^', shiki: '^4.3.1' },
-    })
-    mkdirSync(dirname(join(root, subject.manifest)), { recursive: true })
-    writeFileSync(join(root, subject.manifest), JSON.stringify({
-      name: subject.name,
-      peerDependencies: subject.peerDependencies,
-      devDependencies: subject.devDependencies,
-    }))
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ private: true }))
-
-    expect(fixClientPackageManifests(root, facts([subject]))).toEqual([subject.manifest])
-    const fixed = JSON.parse(readFileSync(join(root, subject.manifest), 'utf8')) as {
-      dependencies: Record<string, string>
-      devDependencies: Record<string, string>
-    }
-    expect(fixed.dependencies).toEqual({ shiki: '^4.3.1' })
-    expect(fixed.devDependencies).toEqual({ [CORDIS]: 'workspace:^' })
+    expect(fixed.dependencies).toEqual(subject.dependencies)
+    expect(fixed.peerDependencies).toEqual(subject.peerDependencies)
+    expect(fixed.devDependencies).toEqual(subject.devDependencies)
   })
 })

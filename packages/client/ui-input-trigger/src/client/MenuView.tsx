@@ -2,13 +2,17 @@
  * Trigger candidate menu: renders the InputTriggerService menu store into the
  * conversation.input.overlay anchor. Closed state renders null (the overlay
  * slot stays mounted); groups render in roster order under localized title
- * rows, pending groups as two skeleton rows; pointer picks route back through
+ * rows. A pending group keeps showing the items it already had (the reducer
+ * retains them across a query refinement) and falls back to two skeleton
+ * rows only while it has none; pointer picks route back through
  * the service (combobox pattern — focus never leaves the textarea, so rows
  * are mousedown-handled and the highlight is exposed via
- * aria-activedescendant on the listbox). A source publishing crumbs gets a
- * breadcrumb header pinned above the scrolling list.
+ * aria-activedescendant on the listbox). A row reads title, then the
+ * command-name alias when the title is not the name in another letter case
+ * (a localized title), then the description right-aligned. A source publishing crumbs gets a breadcrumb
+ * header pinned above the scrolling list.
  */
-import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import { IconChevronRightOutline14, ReferenceIcon, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -19,8 +23,8 @@ import type { MenuKey } from './locales.ts'
 /** Full menu props: injected face + the locale seat. */
 export type MenuViewProps = MenuViewInjected & PropsLocale<'slash.menu'>
 
-/** Design cap on the list height (figma SLASH 39:26572 MenuDropdown). */
-const MAX_HEIGHT = 320
+/** Height cap that fits the two headings and eight built-in command rows. */
+const MAX_HEIGHT = 400
 
 /** DOM id of one option row (the aria-activedescendant target). */
 function optionId(source: string, index: number): string {
@@ -42,10 +46,20 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
     () => headers.getSnapshot(),
   )
   const listRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [hasOverflowBelow, setHasOverflowBelow] = useState(false)
   // The list is bottom-anchored above the composer; clamp the design cap to
   // the space above it, re-measured on every store update (the anchor moves
   // when the composer grows).
   const maxHeight = useAnchoredMaxHeight(listRef, MAX_HEIGHT, state)
+  const updateOverflowHint = useCallback(() => {
+    const viewport = viewportRef.current
+    setHasOverflowBelow(viewport !== null
+      && viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1)
+  }, [])
+  useLayoutEffect(() => {
+    updateOverflowHint()
+  }, [state, maxHeight, updateOverflowHint])
   const highlight = state.open ? state.highlight : null
   // Focus stays in the textarea (combobox pattern), so the browser never
   // scrolls the active option into view on keyboard moves — do it here.
@@ -72,7 +86,13 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
   return (
     // The listbox role sits on the scrolling viewport, not this shell: a
     // breadcrumb header is not an option, and a listbox may not carry one.
-    <div ref={listRef} className={css.menu} style={{ maxHeight }} data-trigger-menu="">
+    <div
+      ref={listRef}
+      className={css.menu}
+      style={{ maxHeight }}
+      data-trigger-menu=""
+      data-overflow-below={hasOverflowBelow || undefined}
+    >
       {state.groups.map((group) => {
         const trail = crumbs.get(group.source)
         return trail === undefined ? null : (
@@ -99,10 +119,12 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
         )
       })}
       <div
+        ref={viewportRef}
         className={css.viewport}
         role="listbox"
         aria-label={t('suggestions.aria')}
         aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
+        onScroll={updateOverflowHint}
       >
         {state.groups.map(group => (group.status === 'ready' && group.items.length === 0)
           ? null
@@ -114,7 +136,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
               {group.showGroupTitle === false || group.items.some(item => item.section !== undefined)
                 ? null
                 : <div className={css.groupTitle} role="presentation" data-source={group.source}>{t(group.source as MenuKey)}</div>}
-              {group.status === 'pending'
+              {group.status === 'pending' && group.items.length === 0
                 ? (
                   <div role="status" aria-label={t('loading')} data-source={group.source}>
                     <div className={css.skeletonRow}><span className={css.skeletonBar} style={{ width: '32%' }} /></div>
@@ -148,10 +170,15 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                       >
                         {item.icon !== undefined && (
                           <span className={css.itemIcon} aria-hidden>
-                            <ReferenceIcon kind={item.icon} size={16} />
+                            {typeof item.icon === 'string'
+                              ? <ReferenceIcon kind={item.icon} size={16} />
+                              : <item.icon size={16} />}
                           </span>
                         )}
-                        <span className={css.itemName}>{item.name}</span>
+                        <span className={css.itemName}>{item.label ?? item.name}</span>
+                        {item.label !== undefined && item.label.toLowerCase() !== item.name.toLowerCase() && (
+                          <span className={css.itemAlias}>{item.name}</span>
+                        )}
                         {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
                         {item.drill === true && (
                           <span className={css.trailing}>

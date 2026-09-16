@@ -11,33 +11,36 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
   composeEntries,
+  createProfileResolutionGeneration,
   healProfilesModuleFallback,
+  initProfile,
   installFailLoud,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
+  PluginPackages,
   PROFILE_PATCH_FILENAME,
+  PROFILE_TEMPLATES,
+  resolveProfileDir,
   watchUserPatches,
-  type FailLoudProcess,
   type Profile,
+  type ProfileResolutionGeneration,
+  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
-import {
-  createCallerOwnedShutdown,
-  createProcessShutdown,
-  type ApplicationShutdown,
-} from './process-shutdown.ts'
+import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
 
@@ -92,6 +95,69 @@ const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tre
 export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 
 /**
+ * Initialize a missing profile from one shipped template. This copies only
+ * the template's bundle list and patch-reload policy; local state from the
+ * same-named shipped profile is not read, and no inheritance metadata is
+ * persisted. Shipped profile names are reserved, and the target directory is
+ * claimed exclusively so existing or concurrent state is never reused.
+ * @param name - the new profile name.
+ * @param fromDefaultProfile - shipped profile template to copy.
+ * @param home - Harness home containing the profile directory.
+ * @throws when the template is unknown, the target name is shipped, or the target directory exists.
+ */
+export function initializeProfileFromDefault(
+  name: string,
+  fromDefaultProfile: string,
+  home: string = resolveDshHome(),
+): void {
+  const dir = resolveProfileDir(name, home)
+  const template = Object.hasOwn(PROFILE_TEMPLATES, fromDefaultProfile)
+    ? PROFILE_TEMPLATES[fromDefaultProfile]
+    : undefined
+  if (template === undefined) {
+    const expected = Object.keys(PROFILE_TEMPLATES).sort().map(value => JSON.stringify(value)).join(', ')
+    throw new Error(
+      `${NAME}: unknown default profile ${JSON.stringify(fromDefaultProfile)}; expected one of ${expected}`,
+    )
+  }
+  if (Object.hasOwn(PROFILE_TEMPLATES, name)) {
+    throw new Error(
+      `${NAME}: profile ${JSON.stringify(name)} is shipped and cannot be a custom profile target; `
+      + 'omit --from-default-profile to use it',
+    )
+  }
+  mkdirSync(dirname(dir), { recursive: true })
+  try {
+    mkdirSync(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    const manifestPath = join(dir, 'package.json')
+    if (existsSync(manifestPath)) {
+      throw new Error(
+        `${NAME}: profile ${JSON.stringify(name)} already exists at ${manifestPath}; `
+        + 'omit --from-default-profile to use it',
+      )
+    }
+    throw new Error(
+      `${NAME}: profile directory ${dir} already exists; choose an unused profile name`,
+    )
+  }
+  try {
+    initProfile(dir, template.bundles, template.patchReload)
+  } catch (error) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `${NAME}: profile initialization failed and ${dir} could not be removed`,
+      )
+    }
+    throw error
+  }
+}
+
+/**
  * Resolve the telemetry opt-out switch into its boot patch. ANY non-empty
  * value (including `'0'`/`'false'`) disables: a privacy switch prefers
  * off-by-mistake over on-by-mistake. A composition without the telemetry row
@@ -118,9 +184,12 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * the identical base).
  * @param name - the profile name.
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
+ * @param fromDefaultProfile - shipped template used once to initialize a missing profile.
  * @returns the loaded profile.
+ * @throws when explicit initialization names an unknown template or an existing profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
+export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string): Profile {
+  if (fromDefaultProfile !== undefined) initializeProfileFromDefault(name, fromDefaultProfile)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
@@ -129,6 +198,8 @@ export function prepareProfile(name: string, userLayer = true): Profile {
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
+  /** Immutable package fallback selected before any plugin imports. */
+  resolution: ProfileResolutionGeneration
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
@@ -161,9 +232,14 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  resolutionMode: ProfileResolutionMode,
+  fromDefaultProfile?: string,
 ): Promise<ComposedProfile> {
-  const profile = prepareProfile(name)
-  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
+  const profile = prepareProfile(name, true, fromDefaultProfile)
+  const resolutionOptions = { installAnchor: INSTALL_ANCHOR, profile }
+  const resolution = resolutionMode === 'runtime'
+    ? await createProfileResolutionGeneration(resolutionOptions)
+    : await healProfilesModuleFallback(resolutionOptions)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
@@ -174,43 +250,7 @@ async function composeProfile(
   const composedOverlays = [...overlays]
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays }
-}
-
-/** Signal and final-termination ownership for {@link runProfile}. */
-export type ProfileLifecycle =
-  | {
-    /** The profile runner owns Unix signals and process completion. */
-    kind: 'process'
-  }
-  | {
-    /** The embedding application owns signals and final process termination. */
-    kind: 'caller'
-    /** Receive the bounded controller before profile boot can yield. */
-    attach: (shutdown: ApplicationShutdown) => void
-    /** Route an in-profile exit request to the embedding lifecycle. */
-    requestExit: (code: number) => void
-  }
-
-/**
- * Install fatal-rejection handling while preserving the selected final-termination owner.
- * @param lifecycle - final-termination owner for this profile invocation.
- * @param proc - rejection source, diagnostic sink, and process-mode exit action.
- * @param release - process-owned best-effort teardown before final termination.
- * @returns the uninstaller that removes the rejection handler.
- */
-export function installProfileFailLoud(
-  lifecycle: ProfileLifecycle,
-  proc: FailLoudProcess,
-  release: () => Promise<void> | void,
-): () => void {
-  if (lifecycle.kind === 'process') return installFailLoud(NAME, proc, release)
-  return installFailLoud(NAME, {
-    on: (event, handler) => proc.on(event, handler),
-    off: (event, handler) => proc.off(event, handler),
-    stderr: proc.stderr,
-    exit: (code) => { lifecycle.requestExit(code) },
-  })
+  return { profile, resolution, bundlePatches, homePatches, overlays: composedOverlays }
 }
 
 /** Options for {@link runProfile}. */
@@ -219,18 +259,14 @@ export interface RunProfileOptions {
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
   profile: string
+  /** Shipped template used once to initialize a missing profile. */
+  fromDefaultProfile?: string | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /**
-   * Keep the writable profile and home patch layers live. Defaults to true;
-   * embedders without Node's internal ESM loader (notably Electron) can opt
-   * out while retaining the same one-shot composition at startup.
-   */
-  watchConfig?: boolean
-  /** Signal, exit-request, and final process owner. Defaults to the profile runner. */
-  lifecycle?: ProfileLifecycle
+  /** Module fallback backend; pkg executables always use runtime resolution. */
+  resolutionMode?: ProfileResolutionMode
 }
 
 /**
@@ -255,38 +291,44 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
  */
-export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ApplicationShutdown }> {
-  const composed = await composeProfile(options.profile, options.patchFiles)
+export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
+  // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
+  // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
+  // work, which the NODE_USE_ENV_PROXY flag cannot do because Node samples the environment at start.
+  const disposeProxy = await installProxyFromEnvironment(
+    options.environment,
+    (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
+  )
+
+  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
+  const composed = await composeProfile(
+    options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile,
+  )
   const app: { current?: Context } = {}
   const appReady = createAppReady()
-  const lifecycle = options.lifecycle ?? { kind: 'process' as const }
-  const dispose = async (): Promise<void> => { await app.current?.fiber.dispose() }
-  const processShutdown = lifecycle.kind === 'process' ? createProcessShutdown(dispose) : undefined
-  const shutdown = processShutdown ?? createCallerOwnedShutdown(dispose)
-  if (lifecycle.kind === 'caller') lifecycle.attach(shutdown)
+  const shutdown = createProcessShutdown(async () => {
+    await app.current?.fiber.dispose()
+    await disposeProxy()
+  })
   const signalShutdown = new AbortController()
+  const interrupt = (code: number): void => {
+    signalShutdown.abort()
+    shutdown.interrupt(code)
+  }
   // Signals own teardown throughout the startup window, not only after boot()
   // settles: an inserted provider can publish before sibling rows finish mounting.
   // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
   // surface — the launcher does not know whether the app considered its work
   // complete; SIGINT is a user interrupt and reports 130.
-  if (processShutdown !== undefined) {
-    const interrupt = (code: number): void => {
-      signalShutdown.abort()
-      processShutdown.interrupt(code)
-    }
-    process.on('SIGTERM', () => { interrupt(0) })
-    process.on('SIGINT', () => { interrupt(130) })
-  }
-  installProfileFailLoud(lifecycle, process, async () => {
+  process.on('SIGTERM', () => { interrupt(0) })
+  process.on('SIGINT', () => { interrupt(130) })
+  installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })
 
   const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  // Bare plugins resolve from the profile's dependencies first, then from
-  // the installation-closure mirror at profiles/node_modules. This explicit
-  // anchor gives Node's internal importer and Electron's public fallback the
-  // same parent-directory search.
   // Recomposition for the live user layers: bundle layers below, overlays
   // above, so a user edit can never displace them. Parsed app arguments are
   // not in here at all — they live in app-provided services that survive a
@@ -307,14 +349,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
-  // Electron lacks Node's internal ESM loader. Resolve bare plugin names from
-  // the profile manifest so profile-local plugins win, then fall through to
-  // the healed installation closure at `$DSH_HOME/profiles/node_modules`.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), async (hostCtx) => {
     app.current = hostCtx
     // Before any config-tree entry mounts, so plugins resolve all launch-time
-    // environment values from the same immutable provenance snapshot.
+    // environment values from the same immutable launch snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+    await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+      generation: composed.resolution,
+      behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+    })
     // The command line and bounded exit request are launcher facts available
     // to every app plugin that injects the argument snapshot.
     provideCmdline(hostCtx, {
@@ -322,15 +365,14 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       exit: code => void shutdown.shutdown(code),
       ready: appReady.service,
     })
-  }, pathToFileURL(join(composed.profile.dir, 'package.json')).href)
+  })
   app.current = ctx
   // A live-reload profile can dispose the whole tree while post-boot watcher
   // setup is in flight — a signal or appExit. Loader presence and fiber state
   // own liveness; the initial check skips a tree that already exited, and the
   // catch below re-checks for an exit that landed mid-setup. Startup-frozen
   // profiles apply every user layer above but install no HMR fallback or watcher.
-  if (options.watchConfig !== false
-    && composed.profile.patchReload === 'live'
+  if (composed.profile.patchReload === 'live'
     && !signalShutdown.signal.aborted
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {
@@ -346,6 +388,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
           await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
         }
         await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        await ctx.loader.await()
       }
       await watchUserPatches(ctx, {
         binName: NAME,

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-settings` 让插件把配置开放给用户运行时修改：插件用一个 schema 注册 namespace，解析值依次尊重 schema 默认值、部署自身的组合 `base` 与用户编辑的文档分节——用户覆盖优先。消费方读取解析值快照并在每次已提交变更后收到通知；配置界面每个 namespace 得到一条 descriptor——schema、当前值、每个字段来自哪一层、生效时机——而无需直接触碰存储。写入只改动用户覆盖、按 namespace 逐个执行，并可携带期望 revision，让持有陈旧快照的写入方被拒绝，而不是悄悄覆盖较新的写入。文档必须由挂载的提供方存储；没有提供方时一切照旧，配置保持组合原样。
+当用户需要在运行时修改插件配置，而无需重启或重新读取 `cordis.yml` 时，请使用本包。每个 namespace 合并 schema 默认值、部署配置与用户覆盖；读取方会得到深冻结的解析值快照，并可观察已提交的变更。写入只影响用户覆盖、按 namespace 串行执行，并可拒绝陈旧 revision，避免覆盖较新的变更。持久化运行时编辑需要先配置设置存储；否则插件仍可继续使用组合配置。
 
 ## 目录
 
@@ -48,16 +48,14 @@ kind: "package-reference"
 插件用 schemastery schema 注册自己的 namespace，并可选地把组合配置作为 `base` 层传入，让解析值从部署已配置的内容起步：
 
 ```text
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-
-const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema, {
+const scope = ctx.settings.register('ui-theme', ThemeSchema, {
   base: config,   // composition entry config; the user layer resolves above it
 })
 const theme = scope.get()              // deep-frozen resolved snapshot
 scope.update({ density: 'compact' })   // merges into the user section and persists
 ```
 
-`installSettingsSection` 为消费方插件封装了这套接线：只要设置服务存在，它就用插件的组合配置作为 `base` 注册 namespace；服务消失时插件回退到组合配置，行为与原先完全一致。
+TypeScript 会按小写字母、数字与连字符文法检查字面量 namespace 参数；运行时动态传入的字符串接受相同校验。`ctx.settings.installSection(owner, ns, schema, entry, hooks)` 为消费方插件封装可选服务接线：只要设置服务存在，它就用插件的组合配置作为 `base` 注册 namespace；服务消失时插件回退到组合配置，行为与原先完全一致。
 
 ### 读取与观察值
 
@@ -99,7 +97,7 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Service Definition：namespace brand、注册、解析、写队列、describe/脱敏、事件、`installSettingsSection` |
+| [`src/index.ts`](src/index.ts) | Service Definition：namespace 校验、注册、解析、写队列、describe/脱敏、事件、`installSection` |
 | [`src/redact.ts`](src/redact.ts) | `redactSecrets` 遍历器：剥离 `role('secret')` 字段并枚举其 slot |
 | [`src/types.ts`](src/types.ts) | 客户端安全类型面：事件声明、`SettingsNamespace`、`SettingsUpdateSource` |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：`settings/updated` 只对已注册 namespace、只在解析值变化时、且携带权威值触发 |
@@ -135,7 +133,7 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 <a id="model-experience"></a>
 ## 模型体验
 
-间接生效：消费方插件拥有任何由设置值喂给的模型面内容；本服务只存储并解析用户设置，自身不注册任何模型面内容。
+间接生效：由设置值提供的所有面向模型的内容均由消费方插件负责；本服务只存储并解析用户设置，自身不注册任何面向模型的内容。
 
 #### KV Cache 影响
 
@@ -158,6 +156,6 @@ scope.update({ density: 'compact' })   // merges into the user section and persi
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-本开发备注是维护者的工作上下文：尚未决定的开放设计方向。它明确非权威——已发布的行为、限制与已接受的理由见上文各节与包代码。代码 TODO 中记录的开放方向：把公开的 `ns` 参数更名为 `namespace`（API、提供方约定、实现、测试与消费方同步）；注册释放时停用所有 watcher 并等待其 tail，让回调不越过 registrant fiber 存活；替换注册从持久化分节重新解析，让进行中的旧写入不会把它留成陈旧值；改用属性安全的对象构造，让 `__proto__` 这类合法 JSON 键保持为自有数据。fail-closed 的 `describeForWire()` 净化器是上文脱敏限制的暂缓答案。
+本开发备注是维护者的工作上下文：尚未决定的开放设计方向。它明确非权威——已发布的行为、限制与已接受的理由见上文各节与包代码。代码 TODO 中记录的开放方向：把公开的 `ns` 参数更名为 `namespace`（API、提供方约定、实现、测试与消费方同步）；释放注册项时停用所有 watcher 并等待其调用链完成，确保回调不会在 registrant fiber 释放后继续运行；替换注册从持久化分节重新解析，让进行中的旧写入不会把它留成陈旧值；改用属性安全的对象构造，让 `__proto__` 这类合法 JSON 键保持为自有数据。fail-closed 的 `describeForWire()` 净化器是上文脱敏限制的暂缓答案。
 
 </details>

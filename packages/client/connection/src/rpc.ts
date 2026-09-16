@@ -1,7 +1,6 @@
 /** Generic unary RPC contracts shared by the Host and Client Connection halves. */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Correlation id minted by a caller and echoed by the Connection response. */
 export type RpcId = Branded<'rpc-id'>
@@ -27,32 +26,6 @@ export type ConnectionRpcResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: ConnectionRpcFailure }
 
-/** Typed failure details used by Client Session adapters. */
-export interface RpcErrorDetailsMap {
-  'bad-request': { issues: object[] }
-  'cancelled': {}
-  'session-not-found': { sessionId: SessionId }
-  'invalid-time-zone': { value: string }
-  'agent-preset-read-only': { agentPreset: string; reason: string }
-  'agent-preset-locked': { sessionId: SessionId; agentPreset: string }
-  'agent-preset-not-found': { agentPreset: string; available: readonly string[] }
-  'agent-preset-invalid': { agentPreset: string; reason: string }
-  'agent-busy': { reason: string }
-  'internal': {}
-}
-
-/** Error codes used by Client Session adapters. */
-export type RpcErrorCode = keyof RpcErrorDetailsMap
-
-/** Typed failure used by Client Session adapters. */
-export type RpcError = {
-  [Code in RpcErrorCode]: {
-    readonly code: Code
-    readonly message: string
-    readonly details: RpcErrorDetailsMap[Code]
-  }
-}[RpcErrorCode]
-
 /** Historical short name for a generic Connection result. */
 export type RpcResult<T> = ConnectionRpcResult<T>
 
@@ -65,7 +38,7 @@ export function transportError<T>(error: unknown): RpcResult<T> {
   return {
     ok: false,
     error: {
-      code: 'internal',
+      code: 'gateway/internal',
       message: error instanceof Error ? error.message : String(error),
       details: {},
     },
@@ -134,7 +107,10 @@ export type ConnectionRpcHandler = (
 export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean
 
 /** HTTP methods supported by exact Fetch routes on the shared API channel. */
-export type ConnectionFetchMethod = 'GET' | 'HEAD'
+export type ConnectionFetchMethod = 'GET' | 'HEAD' | 'POST'
+
+/** How the node:http bridge presents one request body to its Fetch route. */
+export type ConnectionRequestBodyMode = 'buffered' | 'streaming'
 
 /** One exact, transport-independent Fetch route owned by a Host feature. */
 export interface ConnectionFetchRoute {
@@ -142,6 +118,8 @@ export interface ConnectionFetchRoute {
   readonly path: string
   /** Methods this route owns. Other methods continue through normal shared-channel dispatch. */
   readonly methods: readonly ConnectionFetchMethod[]
+  /** Buffered requests obey the configured JSON cap; streaming requests arrive with backpressure and no aggregate cap. */
+  readonly requestBody: ConnectionRequestBodyMode
   /** Handle one request after the physical carrier has applied its trust and authentication policy. */
   readonly fetch: (request: Request) => Promise<Response>
 }
@@ -224,6 +202,13 @@ export interface HostConnectionHandle {
 /** Transport-independent Fetch handler used by HTTP and worker carriers. */
 export interface ConnectionFetchHandler {
   /**
+   * Resolve body handling before the bridge reads any request bytes.
+   * @param request - request method and URL available from node:http headers.
+   * @returns the registered route's body handling mode.
+   */
+  requestBodyMode(request: { readonly method: string; readonly url: URL }): ConnectionRequestBodyMode
+
+  /**
    * Dispatch one already-authenticated request.
    * @param request - Fetch request below the shared channel.
    * @returns the registered response or a 404 response.
@@ -263,63 +248,4 @@ export interface ClientConnectionRpc {
     payload: unknown,
     signal: AbortSignal,
   ) => AsyncIterable<unknown>
-}
-
-/** Fetch-shaped request carrier shared by API methods and generic RPC channels. */
-export interface ConnectionFetch {
-  /**
-   * Dispatch one request through the active physical carrier.
-   * @param input - absolute URL naming the logical channel and endpoint.
-   * @param init - standard Fetch request options.
-   * @returns a standard Fetch response after the carrier round trip.
-   */
-  (input: URL, init?: RequestInit): Promise<Response>
-}
-
-/** Desktop bridge injected by the Electron preload in a context-isolated renderer. */
-export interface DesktopConnectionBridge {
-  /** Dispatch one unary request as structured-clone-only metadata and bytes. */
-  request(request: DesktopRequest): Promise<DesktopResponse>
-  /** Abort one pending unary request. */
-  cancelRequest(id: string): void
-  /** Open one typed Remote stream and receive its lifecycle through callbacks. */
-  openStream(request: DesktopStreamRequest, sink: DesktopStreamSink): void
-  /** Abort one pending or open streaming request. */
-  cancelStream(id: string): void
-  /** Save a Host download through the desktop shell's native save dialog. */
-  saveDownload(path: string, filename: string): Promise<void>
-}
-
-/** Structured-clone request exchanged with the Electron preload. */
-export interface DesktopRequest {
-  readonly id: string
-  readonly url: string
-  readonly method: string
-  readonly headers: [string, string][]
-  readonly body?: Uint8Array
-}
-
-/** Complete unary response exchanged with the Electron preload. */
-export interface DesktopResponse {
-  readonly status: number
-  readonly statusText: string
-  readonly headers: [string, string][]
-  readonly body: Uint8Array
-}
-
-/** Structured-clone stream opening exchanged with the Electron preload. */
-export interface DesktopStreamRequest {
-  /** Renderer-minted id used for cancellation and event routing. */
-  readonly id: string
-  /** Gateway Remote endpoint, including the special `$events` endpoint. */
-  readonly endpoint: string
-  /** Gateway-owned JSON payload. */
-  readonly payload: unknown
-}
-
-/** Renderer-owned callbacks receiving decoded Remote stream values. */
-export interface DesktopStreamSink {
-  data(value: unknown): void
-  end(): void
-  error(message: string): void
 }

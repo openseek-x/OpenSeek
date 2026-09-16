@@ -2,8 +2,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { bootThemeInjection } from './boot-theme.ts'
+import type {} from '@deepseek-ai/dsh-settings'
+import { bootThemeInjections } from './boot-theme.ts'
 import {
   DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema,
   type ThemePreference, type ThemeSettings,
@@ -15,7 +15,7 @@ export {
   type ThemePreference, type ThemeSettings,
 } from './theme-settings.ts'
 
-const THEME_NAMESPACE = settingsNamespace(THEME_SETTINGS_NAMESPACE)
+const THEME_NAMESPACE = THEME_SETTINGS_NAMESPACE
 
 /** Read the registered theme section or the schema defaults without a settings provider. */
 function readSection(ctx: Context): { preference: ThemePreference; fontSize: number } {
@@ -39,6 +39,6 @@ export function apply(ctx: Context): void {
   })
   ctx.on('webserver/index-inject', (table) => {
     const section = readSection(ctx)
-    table.push(bootThemeInjection(section.preference, section.fontSize))
-  })
+    table.push(...bootThemeInjections(section.preference, section.fontSize))
+  }, { prepend: true })
 }

@@ -1,28 +1,27 @@
 import { defineConfig } from 'tsdown'
 
-const shared = {
-  outDir: 'lib',
-  platform: 'node' as const,
-  target: 'es2024',
-  dts: false,
-  clean: false,
-  external: ['electron', 'electron-updater'],
-}
-
 export default defineConfig([
   {
-    ...shared,
-    entry: { main: 'lib/types/main.js' },
+    entry: ['lib/types/main.js'],
+    outDir: 'lib',
     format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
     fixedExtension: false,
+    dts: false,
+    clean: false,
+    deps: { neverBundle: ['electron'] },
   },
-  {
-    ...shared,
-    entry: {
-      bootstrap: 'lib/types/bootstrap.js',
-      preload: 'lib/types/preload.js',
-    },
-    format: ['cjs'],
-    fixedExtension: true,
-  },
+  ...(['preload', 'preload-app'] as const).map(name => ({
+    // Sandboxed Electron preloads run as CommonJS even though the application package is ESM.
+    entry: { [name]: `lib/types/${name}.js` },
+    outDir: 'lib',
+    format: ['cjs'] as const,
+    platform: 'node' as const,
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+    deps: { neverBundle: ['electron'] },
+  })),
 ])

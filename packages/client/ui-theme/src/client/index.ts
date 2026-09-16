@@ -96,7 +96,7 @@ export interface ThemeSnapshot {
 
 /** One theme token exposed to pre-definition Cordis inspection. */
 export interface ThemeTokenInspection {
-  /** Token name accepted by {@link ThemeService.overrideTokens}. */
+  /** Token name accepted by {@link ThemeRuntime.overrideTokens}. */
   name: string
   /** Intended visual role. */
   description: string
@@ -417,7 +417,7 @@ function dynamicToken(name: string): ThemeTokenInspection {
  * row. `remote` carries the forwarded settings invalidation that
  * `ctx.settingsScope.bind(spec)` subscribes to on this context.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'remote', 'settingsScope']
 
 /**
  * Client plugin body: provide the theme service and register the
