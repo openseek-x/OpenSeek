@@ -14,7 +14,7 @@ OpenSeek ships the upstream Desktop implementation with the complete `dsh` famil
 
 The selector checks the Desktop manifest version, so a later release cannot inherit certificate-free publication solely because signing variables are absent. Builds without the selector retain the upstream signed release configuration and require its Apple or Windows release environment.
 
-OpenSeek issue automation and real-API E2E use their own opt-in credentials. Each workflow records a notice and skips only the credential-protected operation when its App credentials or `DEEPSEEK_API_KEY_EXTERNAL` are absent; the ordinary keyless CI checks remain required.
+OpenSeek skips the upstream Issue policy and lifecycle workflows because their checked-in Project configuration belongs to the upstream repository. Real-API E2E remains opt-in: when `DEEPSEEK_API_KEY_EXTERNAL` is absent, the workflow records a notice and skips only that credential-protected operation while ordinary keyless CI remains required.
 
 Fork CI uses GitHub-hosted `ubuntu-24.04` and `windows-2025` runners. The upstream repository alone retains its high-capacity, self-hosted, and Blacksmith runner selections.
 

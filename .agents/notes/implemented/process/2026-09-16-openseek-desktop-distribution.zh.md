@@ -14,7 +14,7 @@ OpenSeek 发布版本为 `0.1.9` 的完整上游 Desktop 实现和 `dsh` 包族�
 
 选择器会校验 Desktop manifest 版本，因此后续 Release 不会仅因缺少签名变量就继承无证书发布。未设置该选择器的构建保留上游签名发布配置，并要求其 Apple 或 Windows 发布环境。
 
-OpenSeek Issue 自动化与真实 API E2E 使用各自可选配置的凭据。缺少 App 凭据或 `DEEPSEEK_API_KEY_EXTERNAL` 时，每个工作流都会记录通知，并且只跳过受凭据保护的操作；普通无密钥 CI 检查仍然必须通过。
+OpenSeek 会跳过上游的 Issue policy 与 lifecycle 工作流，因为其仓库内 Project 配置属于上游仓库。真实 API E2E 仍采用可选凭据：缺少 `DEEPSEEK_API_KEY_EXTERNAL` 时，工作流会记录通知并且只跳过该受凭据保护的操作，普通无密钥 CI 仍然必须通过。
 
 Fork CI 使用 GitHub 托管的 `ubuntu-24.04` 和 `windows-2025` runner。只有上游仓库保留其高配、自托管和 Blacksmith runner 选择。
 
