@@ -16,6 +16,8 @@ The selector checks the Desktop manifest version, so a later release cannot inhe
 
 OpenSeek issue automation and real-API E2E use their own opt-in credentials. Each workflow records a notice and skips only the credential-protected operation when its App credentials or `DEEPSEEK_API_KEY_EXTERNAL` are absent; the ordinary keyless CI checks remain required.
 
+Fork CI uses GitHub-hosted `ubuntu-24.04` and `windows-2025` runners. The upstream repository alone retains its high-capacity, self-hosted, and Blacksmith runner selections.
+
 Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`. That explicit variable prevents a fork from sending build output to the upstream Pages project; enabling it requires the Cloudflare deployment and Access secrets the workflow already names.
 
 ## Alternatives considered
