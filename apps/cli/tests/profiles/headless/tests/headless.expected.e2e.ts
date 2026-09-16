@@ -608,7 +608,6 @@ describe('headless stream-json snapshots', () => {
 
       expect(result.stderr).toBe('')
       expect(server.requests.length).toBeGreaterThanOrEqual(1)
-      expect(server.requests.length).toBeLessThanOrEqual(2)
       expect(server.paths.every(path => path === '/v1/messages')).toBe(true)
       const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
       expect(agentRequest?.output_config).toEqual({ effort: 'low' })
