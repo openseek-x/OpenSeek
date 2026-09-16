@@ -24,7 +24,7 @@ Fork 覆盖率采用两个分片、每个分片两个 worker，并串行调度�
 
 NPM 解析单元测试在普通测试中仍使用 10 秒性能上限。分片覆盖率运行会验证相同的解析行为，但使用更长的上限，因为 V8 插桩会改变计时信号。
 
-DeepSeek 默认值的预期输出测试夹具会维持流式响应，直到 one-shot 进程在托管 runner 上发出后台标题请求。现有断言仍要求同时收到 Agent 请求和标题请求。
+DeepSeek 默认值的预期输出测试夹具会发出 Provider 注释，但不会延迟 one-shot 响应。现有断言仍要求同时收到 Agent 请求和标题请求。
 
 Cloudflare 预览部署会保持关闭，直到 OpenSeek 设置 `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`。这个显式变量避免 fork 把构建产物发送到上游 Pages 项目；启用预览需要配置工作流已命名的 Cloudflare 部署和 Access 密钥。
 
