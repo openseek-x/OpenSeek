@@ -26,6 +26,8 @@ NPM 解析单元测试在普通测试中仍使用 10 秒性能上限。分片覆
 
 运行时冒烟测试会在 macOS 上验证 POSIX flock 绑定，在 Windows 上跳过它，因为打包模块会正确声明该能力不受支持。各平台仍会验证 Koffi、Sharp、HTML 转换和 PTY 载荷。
 
+桌面壳保留 Electron 标准 Edit 菜单，使 macOS 和 Windows 的原生剪切、复制、粘贴与全选快捷键可以到达获得焦点的渲染控件。
+
 DeepSeek 默认值的预期输出测试夹具会验证 one-shot Agent 请求与 Provider 注释，但不会假设可选后台标题请求能在关闭时继续完成。专门的兼容流测试会验证标题请求送达。
 
 Cloudflare 预览部署会保持关闭，直到 OpenSeek 设置 `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`。这个显式变量避免 fork 把构建产物发送到上游 Pages 项目；启用预览需要配置工作流已命名的 Cloudflare 部署和 Access 密钥。

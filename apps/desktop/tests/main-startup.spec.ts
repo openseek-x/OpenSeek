@@ -14,6 +14,7 @@ const harness = await vi.hoisted(async () => {
   const hosts: FakeHost[] = []
   const managerRuntimes: unknown[] = []
   const handlers = new Map<string, (event: { senderFrame: { url: string } }) => unknown>()
+  const menu = { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() }
   let pluginsEnabled = false
   let preparing = deferred()
   let prepared = deferred()
@@ -74,7 +75,7 @@ const harness = await vi.hoisted(async () => {
     }),
   })
   return {
-    windows, hosts, managerRuntimes, handlers, app, FakeWindow, FakeHost,
+    windows, hosts, managerRuntimes, handlers, menu, app, FakeWindow, FakeHost,
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     assertProfileRuntime: vi.fn(),
@@ -102,7 +103,7 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
   },
-  Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
+  Menu: harness.menu,
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
@@ -157,6 +158,13 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('installs Electron’s standard edit menu for native clipboard shortcuts', async () => {
+    await import('../src/main.ts')
+    expect(harness.menu.buildFromTemplate).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ role: 'editMenu' }),
+    ]))
+  })
+
   it('exits with a diagnostic when both initialization and emergency navigation fail', async () => {
     const exited = Promise.withResolvers<undefined>()
     vi.spyOn(harness.app, 'getLocale').mockImplementationOnce(() => { throw new Error('locale unavailable') })
