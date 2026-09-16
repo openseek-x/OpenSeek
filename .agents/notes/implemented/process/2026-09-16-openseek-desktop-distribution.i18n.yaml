@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-16-openseek-desktop-distribution.md
-2026-09-16-openseek-desktop-distribution.md: 668c5afbdefed8bbc2b4dd8e87de7899ba992a4c
-2026-09-16-openseek-desktop-distribution.zh.md: 68c9a573d6ae2285ed802181cb957e1d5136b985
+2026-09-16-openseek-desktop-distribution.md: d5b580944dc867fad2ba78f419ae78402255e075
+2026-09-16-openseek-desktop-distribution.zh.md: 234faba1c5fa1e79d34aebbdb4be79e72c2cde6d
