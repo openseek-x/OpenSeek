@@ -20,6 +20,8 @@ Fork CI 使用 GitHub 托管的 `ubuntu-24.04` 和 `windows-2025` runner。只�
 
 Fork 也会按托管 runner 的容量降低快照门禁并行度。这样可以避免上游 16 核任务中 32 个并发快照进程导致 profile 启动超时；上游保持该高吞吐设置。
 
+DeepSeek 默认值的预期输出测试夹具会维持流式响应，直到 one-shot 进程在托管 runner 上发出后台标题请求。现有断言仍要求同时收到 Agent 请求和标题请求。
+
 Cloudflare 预览部署会保持关闭，直到 OpenSeek 设置 `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`。这个显式变量避免 fork 把构建产物发送到上游 Pages 项目；启用预览需要配置工作流已命名的 Cloudflare 部署和 Access 密钥。
 
 ## Alternatives considered
