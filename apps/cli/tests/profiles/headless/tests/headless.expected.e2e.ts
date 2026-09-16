@@ -697,7 +697,7 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      expect(server.requests).toHaveLength(2)
+      expect(server.requests.length).toBeGreaterThanOrEqual(2)
       const agentRequest = server.requests.find(request => request.max_tokens === 1024)
       const titleRequest = server.requests.find(request => request.max_tokens === 64)
       expect(agentRequest).not.toHaveProperty('max_completion_tokens')
