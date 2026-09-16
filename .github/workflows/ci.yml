@@ -120,11 +120,12 @@ jobs:
           || 'ubuntu-24.04' }}
     name: node 24 / coverage
     env:
-      # Partitioning replaces the instrumented share; this budget gives the
-      # exempt-heavy gate two workers on both hosted and failover runners.
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '4'
-      DSH_GATE_CONCURRENCY: '3'
+      # Forks run on four-core hosted machines, so their coverage partitions
+      # and worker pools stay within that capacity. The upstream lane keeps
+      # its high-throughput 16-core settings.
+      DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '2' }}
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '3' || '1' }}
       # Managed-scope teardown cases run past the default per-test budget when
       # this lane's partitions, workers, and sibling gates share one host: the
       # disposal cases in subprocess-local and bash-sandbox exceeded 5000ms on
@@ -132,7 +133,7 @@ jobs:
       # the budget on the in-house pool; the lane is green with this value
       # (run 34457655892). The Windows coverage lane grants the same budget for
       # the same reason.
-      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+      DSH_COVERAGE_TEST_TIMEOUT_MS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '90000' || '120000' }}
       # A gate failure aborts the sibling gate instead of waiting out its
       # multi-minute instrumented run.
       DSH_GATE_FAIL_FAST: '1'
@@ -557,10 +558,10 @@ jobs:
     name: windows node 24 / coverage
     timeout-minutes: 120
     env:
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '4'
-      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
-      DSH_GATE_CONCURRENCY: '3'
+      DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '2' }}
+      DSH_COVERAGE_TEST_TIMEOUT_MS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '90000' || '120000' }}
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '3' || '1' }}
       # A gate failure aborts the sibling gate instead of waiting out its
       # multi-minute instrumented run.
       DSH_GATE_FAIL_FAST: '1'

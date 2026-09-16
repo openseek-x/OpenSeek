@@ -230,9 +230,12 @@ describe('CI workflow', () => {
       expect(install!.run).not.toContain('$cloneFlag')
     }
 
-    // windows-coverage uses the lower 4-partition profile.
+    // The upstream Windows lane uses four partitions; hosted forks use two
+    // to keep their total worker count within the runner capacity.
     expect(windowsCoverage.name).toBe('windows node 24 / coverage')
-    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: '4' })
+    expect(windowsCoverage.env).toMatchObject({
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository == 'deepseek-harness/deepseek-harness' && '4' || '2' }}",
+    })
     const coverageSteps = windowsCoverage.steps as unknown[]
     const coverageCommands = coverageSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -344,11 +347,16 @@ describe('CI workflow', () => {
       linuxAggregate: aggregate['runs-on'] as string,
       windows: windowsBuild['runs-on'] as string,
     }
-    const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer'): unknown => {
+    const evaluate = (
+      expression: string,
+      vars: Record<string, string>,
+      login = 'maintainer',
+      repository = 'deepseek-harness/deepseek-harness',
+    ): unknown => {
       return evaluateRunsOn(expression, {
         vars,
         fromJSON: JSON.parse,
-        github: { event: { pull_request: { user: { login } } } },
+        github: { repository, event: { pull_request: { user: { login } } } },
       })
     }
     for (const [name, selector, variable, pool, hosted] of [
@@ -365,6 +373,8 @@ describe('CI workflow', () => {
         expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(hosted)
       }
     }
+    expect(evaluate(selectors.linux, {}, 'maintainer', 'openseek-x/OpenSeek')).toBe('ubuntu-24.04')
+    expect(evaluate(selectors.windows, {}, 'maintainer', 'openseek-x/OpenSeek')).toBe('windows-2025')
 
     // The run-gates aggregate lanes stop at the first blocking gate failure so
     // a red aggregate does not keep burning runner time on the remaining
@@ -999,8 +1009,8 @@ describe('Issue lifecycle workflow', () => {
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
-    expect(tokenStep?.if).toBeUndefined()
-    expect(handleStep?.if).toBeUndefined()
+    expect(tokenStep?.if).toContain("steps.credentials.outputs.configured == 'true'")
+    expect(handleStep?.if).toContain("steps.credentials.outputs.configured == 'true'")
 
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
@@ -1020,17 +1030,17 @@ describe('Issue lifecycle workflow', () => {
     expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
     expect(preflightStep?.if).toBeUndefined()
     expect(policyJob.if).toBeUndefined()
-    expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
+    expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated == 'true' || steps.credentials.outputs.configured == 'true' }}")
 
     expect(tokenStep).toMatchObject({
       id: 'app-token',
-      if: "${{ steps.preflight.outputs.needs-project == 'true' }}",
+      if: "${{ steps.preflight.outputs.needs-project == 'true' && steps.credentials.outputs.configured == 'true' }}",
       uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
       with: {
         'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',
         'private-key': '${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}',
-        owner: 'deepseek-harness',
-        repositories: 'deepseek-harness',
+        owner: '${{ github.repository_owner }}',
+        repositories: '${{ github.event.repository.name }}',
         'permission-issues': 'read',
         'permission-organization-projects': 'read',
       },

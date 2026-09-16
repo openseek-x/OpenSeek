@@ -115,7 +115,7 @@ describe('master-only platform scheduling', () => {
     expect(preflight.if).toContain("github.event_name != 'pull_request'")
     expect(preflight.if).toContain('github.event.pull_request.head.repo.fork')
     expect(preflight.if).toContain("github.event.pull_request.user.login == 'dependabot[bot]'")
-    expect(preflight.run).toContain('exit 1')
+    expect(preflight.run).toContain("echo 'configured=false' >> \"$GITHUB_OUTPUT\"")
   })
 
   it('runs Wine once on hosted master CI and seeds its own apt cache', () => {

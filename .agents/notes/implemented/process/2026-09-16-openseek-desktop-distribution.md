@@ -20,6 +20,8 @@ Fork CI uses GitHub-hosted `ubuntu-24.04` and `windows-2025` runners. The upstre
 
 The fork also scales snapshot gate parallelism to the hosted runner capacity. This avoids profile-startup timeouts caused by the upstream 16-core lane's 32 concurrent snapshot processes; upstream keeps that higher throughput setting.
 
+Fork coverage uses two partitions with two workers and serial gate scheduling. This avoids memory and scheduling contention from the upstream 16-core configuration while preserving the complete coverage gate.
+
 The DeepSeek-default expected-output fixture keeps its streaming response open until the one-shot process issues its background title request on hosted runners. The existing assertion still requires both the agent request and the title request.
 
 Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`. That explicit variable prevents a fork from sending build output to the upstream Pages project; enabling it requires the Cloudflare deployment and Access secrets the workflow already names.
