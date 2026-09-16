@@ -94,7 +94,7 @@ Each target owns its packed package inputs, prepared runtime, package set, dsh t
 
 ### OpenSeek distribution
 
-OpenSeek `0.1.9` releases set `OPENSEEK_DESKTOP_RELEASE=0.1.9`. This exact value permits an ad-hoc macOS application and an unsigned Windows installer, publishes the verified assets through the OpenSeek GitHub Release, and configures the matching GitHub updater channel. The guard rejects a different value or a value that no longer matches the Desktop manifest.
+OpenSeek `0.1.10` releases set `OPENSEEK_DESKTOP_RELEASE=0.1.10`. This exact value permits an ad-hoc macOS application and an unsigned Windows installer, publishes the verified assets through the OpenSeek GitHub Release, and configures the matching GitHub updater channel. The guard rejects a different value or a value that no longer matches the Desktop manifest.
 
 These packages do not carry Apple Developer ID, macOS notarization, or Windows Authenticode identity. Gatekeeper and SmartScreen can warn before installation. A later OpenSeek release requires an explicit source change to the version-bound release value and its workflow validation; omission of certificate configuration does not select this distribution mode.
 
