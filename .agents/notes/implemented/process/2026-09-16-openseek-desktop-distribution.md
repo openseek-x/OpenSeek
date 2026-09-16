@@ -18,6 +18,8 @@ OpenSeek issue automation and real-API E2E use their own opt-in credentials. Eac
 
 Fork CI uses GitHub-hosted `ubuntu-24.04` and `windows-2025` runners. The upstream repository alone retains its high-capacity, self-hosted, and Blacksmith runner selections.
 
+The fork also scales snapshot gate parallelism to the hosted runner capacity. This avoids profile-startup timeouts caused by the upstream 16-core lane's 32 concurrent snapshot processes; upstream keeps that higher throughput setting.
+
 Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`. That explicit variable prevents a fork from sending build output to the upstream Pages project; enabling it requires the Cloudflare deployment and Access secrets the workflow already names.
 
 ## Alternatives considered

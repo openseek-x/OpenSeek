@@ -252,17 +252,21 @@ jobs:
           || 'ubuntu-24.04' }}
     name: node 24 / snapshots and artifacts
     env:
-      DSH_GATE_CONCURRENCY: '10'
+      # The upstream 16-core fleet has headroom for the high-throughput
+      # snapshot lane. GitHub-hosted fork runners do not, and oversubscription
+      # makes profile startup exceed the snapshot timeout.
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '10' || '4' }}
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
-      DSH_OXLINT_THREADS: '8'
-      DSH_PUBLINT_CONCURRENCY: '8'
-      DSH_WEB_SNAPSHOT_WORKERS: '6'
+      DSH_OXLINT_THREADS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '4' }}
+      DSH_PUBLINT_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '8' || '4' }}
+      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'deepseek-harness/deepseek-harness' && '6' || '2' }}
       # A failing gate aborts its running siblings: a failing build stops the
       # independent Node compatibility smoke, and a failing reader (e.g.
       # publint) stops the remaining artifact consumers.
       DSH_GATE_FAIL_FAST: '1'
-      # Failover halves snapshot concurrency for the shared 64-core VM.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
+      # The upstream self-hosted failover halves concurrency for the shared
+      # VM. Forks use a smaller hosted runner and need a lower fixed cap.
+      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ github.repository == 'deepseek-harness/deepseek-harness' && (vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32') || '4' }}
     steps:
       # Runner cleanup owns tool caches and fixtures, including cancelled runs.
       - name: Use runner-owned temporary storage
