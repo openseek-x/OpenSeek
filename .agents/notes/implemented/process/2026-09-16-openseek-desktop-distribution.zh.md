@@ -12,6 +12,8 @@ DeepSeek Harness 现已包含 Electron Desktop 应用，但 OpenSeek 无法使�
 
 OpenSeek 发布版本为 `0.1.10` 的完整上游 Desktop 实现和 `dsh` 包族。`OPENSEEK_DESKTOP_RELEASE=0.1.10` 会选择唯一经过审查的分发模式：macOS 资源与应用使用 ad-hoc 签名，Windows 产物保持未签名，electron-builder 为 `openseek-x/OpenSeek` 生成目标专用的 GitHub 更新元数据。发布工作流会在原生 runner 上构建 macOS arm64、macOS x64 和 Windows x64，校验发布标签，收集每个安装包和更新产物，记录校验和，并且只在全部打包任务成功后创建 GitHub Release。
 
+Desktop 打包会为 macOS、Windows 和 Linux 目标显式使用保留的原生图标文件，因此安装后的应用会保持产品图标，而不会回退到 Electron 默认图标。
+
 选择器会校验 Desktop manifest 版本，因此后续 Release 不会仅因缺少签名变量就继承无证书发布。未设置该选择器的构建保留上游签名发布配置，并要求其 Apple 或 Windows 发布环境。
 
 OpenSeek 会跳过上游的 Issue policy 与 lifecycle 工作流，因为其仓库内 Project 配置属于上游仓库。真实 API E2E 仍采用可选凭据：缺少 `DEEPSEEK_API_KEY_EXTERNAL` 时，工作流会记录通知并且只跳过该受凭据保护的操作，普通无密钥 CI 仍然必须通过。

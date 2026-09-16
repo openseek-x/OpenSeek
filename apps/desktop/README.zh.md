@@ -96,7 +96,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 OpenSeek `0.1.10` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.10`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。
 
-这些安装包不具有 Apple Developer ID、macOS notarization 或 Windows Authenticode 身份。Gatekeeper 和 SmartScreen 可能在安装前显示警告。后续 OpenSeek Release 必须显式修改源码中的版本绑定值及其工作流校验；缺少证书配置不会自动选择此分发模式。
+这些安装包包含 macOS 和 Windows 的 Desktop 应用图标，但不具有 Apple Developer ID、macOS notarization 或 Windows Authenticode 身份。Gatekeeper 和 SmartScreen 可能在安装前显示警告。后续 OpenSeek Release 必须显式修改源码中的版本绑定值及其工作流校验；缺少证书配置不会自动选择此分发模式。
 
 ### 运行时文件筛选
 

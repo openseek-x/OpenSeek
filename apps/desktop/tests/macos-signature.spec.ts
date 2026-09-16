@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
@@ -74,6 +75,22 @@ describe('desktop macOS release signature', () => {
       }],
     })
     expect(typeof config.artifactBuildCompleted).toBe('function')
+  })
+
+  it('uses the restored native icons for every packaged desktop target', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
+    expect(portablePath(config.mac.icon)).toMatch(/\/apps\/desktop\/assets\/icon\.icns$/u)
+    expect(portablePath(config.win.icon)).toMatch(/\/apps\/desktop\/assets\/icon\.ico$/u)
+    expect(portablePath(config.linux.icon)).toMatch(/\/apps\/desktop\/assets\/icon\.png$/u)
+    const [icns, ico, png] = await Promise.all([
+      readFile(config.mac.icon),
+      readFile(config.win.icon),
+      readFile(config.linux.icon),
+    ])
+    expect(icns.subarray(0, 4).toString()).toBe('icns')
+    expect(ico.subarray(0, 4).toString('hex')).toBe('00000100')
+    expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
   })
 
   it('seals PAK resources with their enclosing bundle while signing executable code', async () => {
