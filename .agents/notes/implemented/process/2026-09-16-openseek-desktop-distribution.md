@@ -14,7 +14,7 @@ OpenSeek ships the upstream Desktop implementation with the complete `dsh` famil
 
 The selector checks the Desktop manifest version, so a later release cannot inherit certificate-free publication solely because signing variables are absent. Builds without the selector retain the upstream signed release configuration and require its Apple or Windows release environment.
 
-OpenSeek issue automation and real-API E2E use their own opt-in credentials. Each workflow records a notice and skips only the credential-protected operation when its App credentials or `DEEPSEEK_API_KEY_EXTERNAL` are absent; the ordinary keyless CI checks remain required.
+OpenSeek skips the upstream Issue policy and lifecycle workflows because their checked-in Project configuration belongs to the upstream repository. Real-API E2E remains opt-in: when `DEEPSEEK_API_KEY_EXTERNAL` is absent, the workflow records a notice and skips only that credential-protected operation while ordinary keyless CI remains required.
 
 Fork CI uses GitHub-hosted `ubuntu-24.04` and `windows-2025` runners. The upstream repository alone retains its high-capacity, self-hosted, and Blacksmith runner selections.
 
@@ -24,7 +24,9 @@ Fork coverage uses two partitions with two workers and serial gate scheduling. T
 
 NPM-resolution unit tests retain their 10-second performance limit in normal tests. A partitioned coverage run verifies the same resolver behavior with a longer limit because V8 instrumentation changes the timing signal.
 
-The DeepSeek-default expected-output fixture emits its provider comments without delaying the one-shot response. The existing assertion still requires both the agent request and the title request.
+The bundled runtime smoke test exercises the POSIX flock binding on macOS and omits it on Windows, where the packaged module correctly declares that capability unsupported. Every platform still verifies Koffi, Sharp, HTML conversion, and the PTY payload.
+
+The DeepSeek-default expected-output fixture verifies the one-shot agent request and provider comments without assuming that its optional background title request survives shutdown. A dedicated compatibility-stream case verifies title-request delivery.
 
 Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`. That explicit variable prevents a fork from sending build output to the upstream Pages project; enabling it requires the Cloudflare deployment and Access secrets the workflow already names.
 

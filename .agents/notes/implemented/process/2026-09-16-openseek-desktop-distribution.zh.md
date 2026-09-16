@@ -14,7 +14,7 @@ OpenSeek 发布版本为 `0.1.9` 的完整上游 Desktop 实现和 `dsh` 包族�
 
 选择器会校验 Desktop manifest 版本，因此后续 Release 不会仅因缺少签名变量就继承无证书发布。未设置该选择器的构建保留上游签名发布配置，并要求其 Apple 或 Windows 发布环境。
 
-OpenSeek Issue 自动化与真实 API E2E 使用各自可选配置的凭据。缺少 App 凭据或 `DEEPSEEK_API_KEY_EXTERNAL` 时，每个工作流都会记录通知，并且只跳过受凭据保护的操作；普通无密钥 CI 检查仍然必须通过。
+OpenSeek 会跳过上游的 Issue policy 与 lifecycle 工作流，因为其仓库内 Project 配置属于上游仓库。真实 API E2E 仍采用可选凭据：缺少 `DEEPSEEK_API_KEY_EXTERNAL` 时，工作流会记录通知并且只跳过该受凭据保护的操作，普通无密钥 CI 仍然必须通过。
 
 Fork CI 使用 GitHub 托管的 `ubuntu-24.04` 和 `windows-2025` runner。只有上游仓库保留其高配、自托管和 Blacksmith runner 选择。
 
@@ -24,7 +24,9 @@ Fork 覆盖率采用两个分片、每个分片两个 worker，并串行调度�
 
 NPM 解析单元测试在普通测试中仍使用 10 秒性能上限。分片覆盖率运行会验证相同的解析行为，但使用更长的上限，因为 V8 插桩会改变计时信号。
 
-DeepSeek 默认值的预期输出测试夹具会发出 Provider 注释，但不会延迟 one-shot 响应。现有断言仍要求同时收到 Agent 请求和标题请求。
+运行时冒烟测试会在 macOS 上验证 POSIX flock 绑定，在 Windows 上跳过它，因为打包模块会正确声明该能力不受支持。各平台仍会验证 Koffi、Sharp、HTML 转换和 PTY 载荷。
+
+DeepSeek 默认值的预期输出测试夹具会验证 one-shot Agent 请求与 Provider 注释，但不会假设可选后台标题请求能在关闭时继续完成。专门的兼容流测试会验证标题请求送达。
 
 Cloudflare 预览部署会保持关闭，直到 OpenSeek 设置 `DSH_CLOUDFLARE_PREVIEW_ENABLED=true`。这个显式变量避免 fork 把构建产物发送到上游 Pages 项目；启用预览需要配置工作流已命名的 Cloudflare 部署和 Access 密钥。
 
