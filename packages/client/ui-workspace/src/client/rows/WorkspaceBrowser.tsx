@@ -411,12 +411,12 @@ function SessionTree({
                   }
                   setGroupExpanded(group.key, !group.expanded)
                 }}
-                onCreate={() => {
-                  if (group.workspaceId !== undefined) {
+                onCreate={group.workspaceId === undefined
+                  ? undefined
+                  : () => {
                     setGroupExpanded(group.key, true)
                     startSession(group.workspaceId)
-                  }
-                }}
+                  }}
                 drag={workspaceDragProps}
                 actions={group.workspaceId === undefined
                   ? undefined
