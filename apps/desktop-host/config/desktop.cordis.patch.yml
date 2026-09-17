@@ -27,8 +27,8 @@
   config: {}
 
 - insert:
-    - id: directory-picker-native
-      name: '@deepseek-ai/dsh-host-directory-picker-native'
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
 
-    - id: ui-directory-picker-native
-      name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

@@ -27,6 +27,8 @@ Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 只包含已�
 
 Electron 根据应用 locale 选择类型化的英文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
 
+工作区选择使用应用内目录浏览器，而不是独立的操作系统选择框。它从 Host 主目录打开，用户可进入文件夹或新建一个子文件夹，再将打开的目录作为工作区。Host 只为这项交互提供目录列表；不会把工作区路径发送到外部服务。
+
 ### 运行时与插件激活
 
 签名资源中的 `resources/dsh/desktop-runtime.json` 绑定 shell 版本、内置 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
@@ -94,7 +96,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 ### OpenSeek 分发
 
-OpenSeek `0.1.10` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.10`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。
+OpenSeek `0.1.11` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.11`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。
 
 这些安装包包含 macOS 和 Windows 的 Desktop 应用图标，但不具有 Apple Developer ID、macOS notarization 或 Windows Authenticode 身份。Gatekeeper 和 SmartScreen 可能在安装前显示警告。后续 OpenSeek Release 必须显式修改源码中的版本绑定值及其工作流校验；缺少证书配置不会自动选择此分发模式。
 

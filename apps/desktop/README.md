@@ -27,6 +27,8 @@ The local startup page exposes startup status and available recovery actions; th
 
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
+Workspace selection uses the in-app directory browser rather than a separate operating-system chooser. It opens at the Host home directory, lets users enter folders or create one child folder, and adopts the opened directory as the Workspace. The Host serves directory-only listings for that interaction; no workspace path is sent to an external service.
+
 ### Runtime and plugin activation
 
 The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
@@ -94,7 +96,7 @@ Each target owns its packed package inputs, prepared runtime, package set, dsh t
 
 ### OpenSeek distribution
 
-OpenSeek `0.1.10` releases set `OPENSEEK_DESKTOP_RELEASE=0.1.10`. This exact value permits an ad-hoc macOS application and an unsigned Windows installer, publishes the verified assets through the OpenSeek GitHub Release, and configures the matching GitHub updater channel. The guard rejects a different value or a value that no longer matches the Desktop manifest.
+OpenSeek `0.1.11` releases set `OPENSEEK_DESKTOP_RELEASE=0.1.11`. This exact value permits an ad-hoc macOS application and an unsigned Windows installer, publishes the verified assets through the OpenSeek GitHub Release, and configures the matching GitHub updater channel. The guard rejects a different value or a value that no longer matches the Desktop manifest.
 
 These packages include the Desktop application icon for macOS and Windows. They do not carry Apple Developer ID, macOS notarization, or Windows Authenticode identity. Gatekeeper and SmartScreen can warn before installation. A later OpenSeek release requires an explicit source change to the version-bound release value and its workflow validation; omission of certificate configuration does not select this distribution mode.
 
