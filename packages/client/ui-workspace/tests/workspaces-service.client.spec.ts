@@ -426,6 +426,12 @@ describe('UiWorkspaceService', () => {
       kind: 'error', message: 'create failed',
     })
     expect(warning).toHaveBeenCalledWith('new session failed:', expect.any(Error))
+
+    b.sessions.create.mockRejectedValueOnce('offline')
+    await expect(b.uiWorkspace.startSession(wid('recent-home'))).resolves.toEqual({
+      kind: 'error', message: 'offline',
+    })
+    expect(warning).toHaveBeenLastCalledWith('new session failed:', 'offline')
   })
 
   it('focuses the reused blank Session and the no-Workspace composer', async () => {

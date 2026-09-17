@@ -132,6 +132,21 @@ describe('SidebarRoot shell', () => {
     await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
   })
 
+  it('dismisses ready feedback after its display interval', async () => {
+    vi.useFakeTimers()
+    mountShell()
+    const trigger = screen.getAllByRole('button', { name: 'New session' }).at(-1)!
+
+    await act(async () => {
+      fireEvent.click(trigger)
+      await Promise.resolve()
+    })
+    expect(screen.getByRole('alert').textContent).toBe(en['session.new.ready'])
+
+    act(() => { vi.advanceTimersByTime(4000) })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('renders generic brand fallbacks when no package fills the slots', () => {
     vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
     vi.stubEnv('DSH_CLIENT_GIT_DIRTY', 'true')

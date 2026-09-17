@@ -223,9 +223,7 @@ export function SidebarRoot({
           {...newSessionFeedback.kind === 'pending'
             ? { holdMs: NEW_SESSION_PENDING_HOLD_MS }
             : newSessionFeedback.kind === 'error' ? { holdMs: NEW_SESSION_FAILURE_HOLD_MS } : {}}
-          onDone={() => {
-            setNewSessionFeedback(current => current?.seq === newSessionFeedback.seq ? null : current)
-          }}
+          onDone={() => { setNewSessionFeedback(null) }}
         />
       )}
       <div className={css.logoRow}>
