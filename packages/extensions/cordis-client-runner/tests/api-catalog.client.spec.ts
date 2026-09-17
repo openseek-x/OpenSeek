@@ -26,7 +26,7 @@ describe('Client Cordis inspect catalog', () => {
         'openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>',
         'forkSession(sessionId: SessionId): Promise<void>',
         'connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>',
-        'startSession(workspaceId?: WorkspaceId): void',
+        'startSession(workspaceId?: WorkspaceId): Promise<StartSessionResult>',
         'archiveSession(sessionId: SessionId): Promise<void>',
         'unarchiveSession(sessionId: SessionId): Promise<void>',
         'pickDirectory(): Promise<string | null>',

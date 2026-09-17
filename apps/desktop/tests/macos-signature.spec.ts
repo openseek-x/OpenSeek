@@ -137,7 +137,7 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'darwin',
       DSH_DESKTOP_TARGET_ARCH: 'arm64',
-      OPENSEEK_DESKTOP_RELEASE: '0.1.12',
+      OPENSEEK_DESKTOP_RELEASE: '0.1.13',
     }
     expect(isOpenSeekRelease(environment)).toBe(true)
     const config = createElectronBuilderConfig(environment, 'darwin', 'arm64')

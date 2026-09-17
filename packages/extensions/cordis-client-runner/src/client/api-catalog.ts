@@ -350,9 +350,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a Session already addressable through the Session Controller.',
       },
       {
-        signature: 'startSession(workspaceId?: WorkspaceId): void',
+        signature: 'startSession(workspaceId?: WorkspaceId): Promise<StartSessionResult>',
         description: 'Start a New Session flow and navigate to its Session.',
         parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }],
+        returns: 'whether the actionable surface became ready, navigation superseded it, or creation failed.',
       },
       {
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
@@ -863,6 +864,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SnapshotSelectorHook',
     declaration: 'export type SnapshotSelectorHook<T> = <S>(sel: (s: T) => S, eq?: (a: S, b: S) => boolean) => S;',
+  },
+  {
+    name: 'StartSessionResult',
+    declaration: 'export type StartSessionResult = {\n    readonly kind: \'ready\';\n} | {\n    readonly kind: \'superseded\';\n} | {\n    readonly kind: \'error\';\n    readonly message: string;\n};',
   },
   {
     name: 'StoreDecl',

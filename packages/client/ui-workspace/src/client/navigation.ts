@@ -12,6 +12,12 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 
+/** Result of one global New Session request. */
+export type StartSessionResult =
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'superseded' }
+  | { readonly kind: 'error'; readonly message: string }
+
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
   /**
@@ -41,8 +47,9 @@ export interface UiWorkspace {
   /**
    * Start a New Session flow and navigate to its Session.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+   * @returns whether the actionable surface became ready, navigation superseded it, or creation failed.
    */
-  startSession(workspaceId?: WorkspaceId): void
+  startSession(workspaceId?: WorkspaceId): Promise<StartSessionResult>
   /**
    * Archive a Session and clear it when it is the current selection.
    * @param sessionId - Session to archive.
@@ -143,12 +150,22 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
+    await this.openWorkspaceResult(workspaceId, beforeOpen)
+  }
+
+  /** Run one guarded Workspace navigation and report whether it committed. */
+  private async openWorkspaceResult(
+    workspaceId: WorkspaceId,
+    beforeOpen?: (sessionId: SessionId) => void,
+  ): Promise<boolean> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const isCurrent = (): boolean => !navigation.aborted
     const sessionId = await this.connectWorkspace(workspaceId)
-    if (!isCurrent()) return
+    if (!isCurrent()) return false
     beforeOpen?.(sessionId)
-    if (isCurrent()) this.openSession(sessionId)
+    if (!isCurrent()) return false
+    this.openSession(sessionId)
+    return true
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
@@ -157,26 +174,32 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     if (!navigation.aborted) this.openSession(childId)
   }
 
-  startSession(workspaceId?: WorkspaceId): void {
-    const workspace = this.workspaces.list.getSnapshot()
-    const sessions = this.sessions.list.getSnapshot()
-    const current = sessions.current
-    const currentWorkspaceId = current === undefined
-      ? undefined
-      : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
-    const recent = workspace.phase === 'ready' && sessions.phase === 'ready'
-      ? recentWorkspace(workspace.items, sessions.byId)
-      : undefined
-    const target = workspaceId ?? currentWorkspaceId ?? recent
-    if (target === undefined) {
-      this.sessions.clear()
-      this.ctx.layout.selectPanel(null)
-      this.focusComposer(undefined)
-      return
+  async startSession(workspaceId?: WorkspaceId): Promise<StartSessionResult> {
+    try {
+      const workspace = this.workspaces.list.getSnapshot()
+      const sessions = this.sessions.list.getSnapshot()
+      const current = sessions.current
+      const currentWorkspaceId = current === undefined
+        ? undefined
+        : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
+      const recent = workspace.phase === 'ready' && sessions.phase === 'ready'
+        ? recentWorkspace(workspace.items, sessions.byId)
+        : undefined
+      const target = workspaceId ?? currentWorkspaceId ?? recent
+      if (target === undefined) {
+        this.sessions.clear()
+        this.ctx.layout.selectPanel(null)
+        this.focusComposer(undefined)
+        return { kind: 'ready' }
+      }
+      const ready = await this.openWorkspaceResult(target, (sessionId) => {
+        this.focusComposer(sessionId)
+      })
+      return ready ? { kind: 'ready' } : { kind: 'superseded' }
+    } catch (reason: unknown) {
+      console.warn('new session failed:', reason)
+      return { kind: 'error', message: reason instanceof Error ? reason.message : String(reason) }
     }
-    void this.openWorkspace(target, (sessionId) => { this.focusComposer(sessionId) }).catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
   }
 
   async archiveSession(sessionId: SessionId): Promise<void> {

@@ -259,11 +259,10 @@ describe('UiWorkspaceService', () => {
     })
     const created = Promise.withResolvers<SessionId>()
     b.sessions.create.mockReturnValue(created.promise)
-    const opening = vi.spyOn(b.uiWorkspace, 'openWorkspace')
-    b.uiWorkspace.startSession(wid('alpha'))
+    const started = b.uiWorkspace.startSession(wid('alpha'))
     b.layout.selectPanel('panel-a' as MainPanelId)
     created.resolve(sid('late'))
-    await opening.mock.results[0]!.value
+    await expect(started).resolves.toEqual({ kind: 'superseded' })
     expect(b.sessions.open).not.toHaveBeenCalled()
     expect(b.selectPanel).toHaveBeenCalledExactlyOnceWith('panel-a')
     expect(b.sessions.list.getSnapshot().current).toBe(sid('current'))
@@ -406,33 +405,33 @@ describe('UiWorkspaceService', () => {
     })
     b.sessions.create.mockImplementation(async options => sid(`opened-${String(options?.workspaceId)}`))
 
-    b.uiWorkspace.startSession(wid('recent-home'))
-    await vi.waitFor(() => {
-      expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
-    })
+    await expect(b.uiWorkspace.startSession(wid('recent-home'))).resolves.toEqual({ kind: 'ready' })
+    expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
 
     b.sessions.open(current.id)
-    b.uiWorkspace.startSession()
-    await vi.waitFor(() => {
-      expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-current-home'))
-    })
+    await expect(b.uiWorkspace.startSession()).resolves.toEqual({ kind: 'ready' })
+    expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-current-home'))
 
     b.sessions.clear()
-    b.uiWorkspace.startSession()
-    await vi.waitFor(() => {
-      expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
-    })
+    await expect(b.uiWorkspace.startSession()).resolves.toEqual({ kind: 'ready' })
+    expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
 
     const empty = bench()
-    empty.uiWorkspace.startSession()
+    await expect(empty.uiWorkspace.startSession()).resolves.toEqual({ kind: 'ready' })
     expect(empty.sessions.clear).toHaveBeenCalledOnce()
 
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     b.sessions.create.mockRejectedValueOnce(new Error('create failed'))
-    b.uiWorkspace.startSession(wid('recent-home'))
-    await vi.waitFor(() => {
-      expect(warning).toHaveBeenCalledWith('new session failed:', expect.any(Error))
+    await expect(b.uiWorkspace.startSession(wid('recent-home'))).resolves.toEqual({
+      kind: 'error', message: 'create failed',
     })
+    expect(warning).toHaveBeenCalledWith('new session failed:', expect.any(Error))
+
+    b.sessions.create.mockRejectedValueOnce('offline')
+    await expect(b.uiWorkspace.startSession(wid('recent-home'))).resolves.toEqual({
+      kind: 'error', message: 'offline',
+    })
+    expect(warning).toHaveBeenLastCalledWith('new session failed:', 'offline')
   })
 
   it('focuses the reused blank Session and the no-Workspace composer', async () => {
@@ -442,10 +441,8 @@ describe('UiWorkspaceService', () => {
       workspaces: workspaceState([workspace('alpha', [blank.id])]),
     })
 
-    b.uiWorkspace.startSession()
-    await vi.waitFor(() => {
-      expect(b.sessions.open).toHaveBeenCalledWith(blank.id)
-    })
+    await expect(b.uiWorkspace.startSession()).resolves.toEqual({ kind: 'ready' })
+    expect(b.sessions.open).toHaveBeenCalledWith(blank.id)
     expect(b.sessions.create).not.toHaveBeenCalled()
     expect(b.focusComposer).toHaveBeenCalledExactlyOnceWith(blank.id)
 
@@ -453,7 +450,7 @@ describe('UiWorkspaceService', () => {
       sessions: sessionState(),
       workspaces: workspaceState([]),
     })
-    empty.uiWorkspace.startSession()
+    await expect(empty.uiWorkspace.startSession()).resolves.toEqual({ kind: 'ready' })
     expect(empty.sessions.clear).toHaveBeenCalledOnce()
     expect(empty.selectPanel).toHaveBeenCalledWith(null)
     expect(empty.focusComposer).toHaveBeenCalledExactlyOnceWith(undefined)
