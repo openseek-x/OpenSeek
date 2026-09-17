@@ -42,7 +42,7 @@ import css from './InputBar.module.css'
 export type InputBarProps = ComposerBarProps
 
 export const InputBar = memo(function InputBar({
-  useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments,
+  useSession, useInput, inputActions, keyboard, bindFocus, addFiles, removeAttachment, resolveDraftAttachments,
   retryFileUpload,
   toggleCommandMenu, stop, t,
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher,
@@ -153,9 +153,17 @@ export const InputBar = memo(function InputBar({
   // paths where it does not act (programmatic focus with preventScroll, and
   // session switches that land the caret off screen). The live DOM selection
   // is the ruler; no mirror layer exists to consult.
-  const revealSelection = (): void => {
+  const revealSelection = useCallback((): void => {
     revealDraftSelection(scrollRef)
-  }
+  }, [])
+
+  useEffect(() => bindFocus(() => {
+    if (editor !== null) {
+      focusDraftEditor(editor, revealSelection)
+      return
+    }
+    cardRef.current?.querySelector<HTMLElement>('[data-composer-input]')?.focus({ preventScroll: true })
+  }), [bindFocus, editor, revealSelection])
 
   // Unlock (mount / session switch) returns focus to the box, and owns the
   // reveal that comes with it. Lexical's focus() suppresses the browser's

@@ -45,6 +45,12 @@ export interface IConversation {
    */
   readonly blocks: ComposerBlocks
   /**
+   * Request focus for the composer that addresses a Session, or the no-session Workspace trigger.
+   * A request made before that surface mounts is delivered when it binds.
+   * @param sessionId - target Session; omission targets the no-session composer.
+   */
+  focusComposer(sessionId?: SessionId): void
+  /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
    * @returns completion; business failures reject (and land in promptError).
@@ -168,6 +174,8 @@ export class ConversationController extends Service implements IConversation {
   }> = []
   private activeFileUploads = 0
   private readonly maxConcurrentFileUploads: number
+  private readonly composerFocusHooks = new Map<SessionId | undefined, () => void>()
+  private pendingComposerFocus: { readonly sessionId: SessionId | undefined } | null = null
 
   /**
    * @param ctx - owning root context (the plugin apply context; the service
@@ -196,7 +204,44 @@ export class ConversationController extends Service implements IConversation {
       }
       this.draftAttachments.clear()
       this.fileUploads.set({})
+      this.composerFocusHooks.clear()
+      this.pendingComposerFocus = null
     }, 'conversation draft attachments')
+  }
+
+  /**
+   * Request focus for one resident composer surface.
+   * @param sessionId - target Session; omission targets the no-session Workspace trigger.
+   */
+  focusComposer(sessionId?: SessionId): void {
+    const focus = this.composerFocusHooks.get(sessionId)
+    if (focus === undefined) {
+      this.pendingComposerFocus = { sessionId }
+      return
+    }
+    this.pendingComposerFocus = null
+    queueMicrotask(() => {
+      if (this.composerFocusHooks.get(sessionId) === focus) focus()
+    })
+  }
+
+  /**
+   * Bind the mounted composer focus operation for one surface.
+   * @param sessionId - target Session; omission identifies the no-session Workspace trigger.
+   * @param focus - operation owned by the mounted editor view.
+   * @returns a disposer that removes this exact binding.
+   */
+  bindComposerFocus(sessionId: SessionId | undefined, focus: () => void): () => void {
+    this.composerFocusHooks.set(sessionId, focus)
+    if (this.pendingComposerFocus?.sessionId === sessionId) {
+      this.pendingComposerFocus = null
+      queueMicrotask(() => {
+        if (this.composerFocusHooks.get(sessionId) === focus) focus()
+      })
+    }
+    return () => {
+      if (this.composerFocusHooks.get(sessionId) === focus) this.composerFocusHooks.delete(sessionId)
+    }
   }
 
   /**

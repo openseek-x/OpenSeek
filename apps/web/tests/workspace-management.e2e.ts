@@ -3,7 +3,8 @@
 // one creation route), the dialog's path editor walking the panes with the
 // typed draft, same-basename directory adoption, the rename round
 // trip over the real wire (workspace.rename RPC + durable registry), the
-// duplicate-name pre-check, the
+// duplicate-name pre-check, New Session focus for both the no-Workspace
+// trigger and a reused blank Session, the
 // flat "In one list" view with its persisted group-by preference, the session
 // hover card and row action menu, and the session archive round trip (row
 // menu → workspace.archiveSession RPC → durable global set → row hidden
@@ -167,6 +168,17 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await scaffold?.close()
   })
 
+  it('focuses the Workspace trigger when New Session has no Workspace', async () => {
+    const composer = page.locator('[data-composer-input]')
+    const newSession = page.locator('button[aria-label="New session"]').last()
+    expect(await composer.getAttribute('aria-label')).toBe('Choose workspace')
+    await newSession.focus()
+    await newSession.click()
+    await expect.poll(() => page.evaluate(() =>
+      document.activeElement?.hasAttribute('data-composer-input') === true)).toBe(true)
+    expect(await composer.getAttribute('aria-label')).toBe('Choose workspace')
+  })
+
   it('adds two workspaces through the dialog, each on a folder it created', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-create'))
     const add = async (name: string): Promise<void> => {
@@ -182,6 +194,20 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     expect(titles.slice(0, 2)).toEqual(['beta-ws', 'alpha-ws'])
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
+
+  it('focuses the composer when New Session reuses the selected blank Session', async () => {
+    const composer = page.locator('[data-composer-input]')
+    const newSession = page.locator('button[aria-label="New session"]').last()
+    await newSession.focus()
+    await newSession.click()
+    await expect.poll(() => page.evaluate(() =>
+      document.activeElement?.hasAttribute('data-composer-input') === true)).toBe(true)
+    await expect.poll(
+      () => page.locator('[role="treeitem"][aria-selected="true"]').allTextContents(),
+      { timeout: 10_000 },
+    ).toContain('New Session')
+    expect(await composer.getAttribute('aria-label')).toBe('Describe what you want to build, / commands, @ files or sessions')
+  })
 
   it('renames a workspace over the wire with a duplicate-name pre-check', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-rename'))

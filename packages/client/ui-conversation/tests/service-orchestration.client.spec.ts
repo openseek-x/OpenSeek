@@ -50,6 +50,37 @@ async function bench(maxConcurrentFileUploads = 2) {
 }
 
 describe('ConversationController', () => {
+  it('delivers composer focus requests to mounted and later-bound surfaces', async () => {
+    const b = await bench()
+    const mounted = vi.fn()
+    const disposeMounted = b.root.bindComposerFocus('s1' as SessionId, mounted)
+    b.root.focusComposer('s1' as SessionId)
+    await Promise.resolve()
+    expect(mounted).toHaveBeenCalledOnce()
+
+    disposeMounted()
+    b.root.focusComposer('s1' as SessionId)
+    const later = vi.fn()
+    const disposeLater = b.root.bindComposerFocus('s1' as SessionId, later)
+    await Promise.resolve()
+    expect(later).toHaveBeenCalledOnce()
+
+    disposeLater()
+    b.root.focusComposer('s1' as SessionId)
+    b.root.focusComposer()
+    const superseded = vi.fn()
+    const noSession = vi.fn()
+    const disposeSuperseded = b.root.bindComposerFocus('s1' as SessionId, superseded)
+    const disposeNoSession = b.root.bindComposerFocus(undefined, noSession)
+    await Promise.resolve()
+    expect(superseded).not.toHaveBeenCalled()
+    expect(noSession).toHaveBeenCalledOnce()
+
+    disposeSuperseded()
+    disposeNoSession()
+    await b.runtime.dispose()
+  })
+
   it('routes operations through the public Session binding', async () => {
     const b = await bench()
     await b.scoped.send('hello')

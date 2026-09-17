@@ -306,6 +306,8 @@ export interface ComposerBarOwnerProps {
 /** Package-private operations injected into the resident composer bar. */
 export interface ComposerBarInjected {
   keyboard: ComposerKeyboard | undefined
+  /** Bind the focus operation owned by this mounted composer surface. */
+  bindFocus: (focus: () => void) => () => void
   addFiles: ((files: readonly File[]) => string | null) | undefined
   removeAttachment: ((id: DraftAttachmentId) => void) | undefined
   resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined

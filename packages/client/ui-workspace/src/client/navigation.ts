@@ -107,6 +107,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly directoryPicker: ClientRemote['directoryPicker'],
     private readonly workspaces: IWorkspaces,
     private readonly sessions: ISessions,
+    private readonly focusComposer: (sessionId: SessionId | undefined) => void,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => this.watchNavigation(), 'ui-workspace: Workspace navigation policy')
@@ -170,9 +171,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     if (target === undefined) {
       this.sessions.clear()
       this.ctx.layout.selectPanel(null)
+      this.focusComposer(undefined)
       return
     }
-    void this.openWorkspace(target).catch(
+    void this.openWorkspace(target, (sessionId) => { this.focusComposer(sessionId) }).catch(
       (reason: unknown) => { console.warn('new session failed:', reason) },
     )
   }

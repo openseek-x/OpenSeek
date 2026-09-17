@@ -260,6 +260,7 @@ function mount(
           useInput={useInput}
           inputActions={inputActions}
           keyboard={wiring}
+          bindFocus={() => () => {}}
           addFiles={() => null}
           useFileUploads={bindSnapshotSelector(createSnapshotStore({}))}
           retryFileUpload={undefined}

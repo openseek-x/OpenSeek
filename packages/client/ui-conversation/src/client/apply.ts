@@ -333,6 +333,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       if (sessionId === undefined) {
         return {
           keyboard: undefined,
+          bindFocus: focus => concreteConversation(ctx).bindComposerFocus(undefined, focus),
           addFiles: undefined,
           removeAttachment: undefined,
           resolveDraftAttachments: undefined,
@@ -353,6 +354,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const inputTriggers = inputHub.inputTriggers(sessionId)
       return {
         keyboard: shell,
+        bindFocus: focus => conversation.bindComposerFocus(sessionId, focus),
         addFiles: (files) => {
           if (sessions.binding(sessionId) === undefined) return t('file.sessionUnavailable')
           try {
