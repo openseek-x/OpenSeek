@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
   SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
@@ -33,8 +33,16 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: SidebarRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
-  const startSession = vi.fn()
+function mountShell({
+  collapsed = false,
+  width = 300,
+  start = async () => ({ kind: 'ready' as const }),
+}: {
+  collapsed?: boolean
+  width?: number
+  start?: SidebarRootComponentProps['startSession']
+} = {}) {
+  const startSession = vi.fn(start)
   const toggleSidebar = vi.fn()
   let regionOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
@@ -105,6 +113,25 @@ describe('SidebarRoot shell', () => {
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
+  it('shows pending, ready, failure, and superseded New Session feedback', async () => {
+    const pending = Promise.withResolvers<Awaited<ReturnType<SidebarRootComponentProps['startSession']>>>()
+    const b = mountShell({ start: () => pending.promise })
+    const trigger = screen.getAllByRole('button', { name: 'New session' }).at(-1)!
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('alert').textContent).toBe(en['session.new.preparing'])
+    await act(async () => { pending.resolve({ kind: 'ready' }) })
+    expect(screen.getByRole('alert').textContent).toBe(en['session.new.ready'])
+
+    b.startSession.mockResolvedValueOnce({ kind: 'error', message: 'offline' })
+    fireEvent.click(trigger)
+    await screen.findByText(en['session.new.failed'])
+
+    b.startSession.mockResolvedValueOnce({ kind: 'superseded' })
+    fireEvent.click(trigger)
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+  })
+
   it('renders generic brand fallbacks when no package fills the slots', () => {
     vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
     vi.stubEnv('DSH_CLIENT_GIT_DIRTY', 'true')
@@ -114,7 +141,7 @@ describe('SidebarRoot shell', () => {
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
+      startSession={vi.fn(async () => ({ kind: 'ready' as const }))} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
@@ -134,7 +161,7 @@ describe('SidebarRoot shell', () => {
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
+      startSession={vi.fn(async () => ({ kind: 'ready' as const }))} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
@@ -149,7 +176,7 @@ describe('SidebarRoot shell', () => {
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
+      startSession={vi.fn(async () => ({ kind: 'ready' as const }))} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)

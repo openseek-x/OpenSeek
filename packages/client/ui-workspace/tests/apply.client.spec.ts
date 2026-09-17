@@ -117,7 +117,8 @@ describe('ui-workspace apply', () => {
     const b = await bench()
     declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const startSession = vi.spyOn(b.ctx.uiWorkspace, 'startSession').mockImplementation(() => undefined)
+    const startSession = vi.spyOn(b.ctx.uiWorkspace, 'startSession')
+      .mockResolvedValue({ kind: 'ready' })
 
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     // Both arms delegate to the shared Session navigation action.

@@ -176,6 +176,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await newSession.click()
     await expect.poll(() => page.evaluate(() =>
       document.activeElement?.hasAttribute('data-composer-input') === true)).toBe(true)
+    await expect.poll(() => page.getByRole('alert').textContent()).toContain('New session ready')
     expect(await composer.getAttribute('aria-label')).toBe('Choose workspace')
   })
 
@@ -206,6 +207,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
       () => page.locator('[role="treeitem"][aria-selected="true"]').allTextContents(),
       { timeout: 10_000 },
     ).toContain('New Session')
+    await expect.poll(() => page.getByRole('alert').textContent()).toContain('New session ready')
     expect(await composer.getAttribute('aria-label')).toBe('Describe what you want to build, / commands, @ files or sessions')
   })
 

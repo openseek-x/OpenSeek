@@ -31,7 +31,7 @@ async function bench(declare = true) {
   if (ctx === undefined) throw new Error('the sidebar fixture owner did not activate')
   await ctx.plugin(SlotRegistry).await()
   const layout = { toggleSidebar: vi.fn(), selectPanel: vi.fn() }
-  const uiWorkspace = { startSession: vi.fn() }
+  const uiWorkspace = { startSession: vi.fn(async () => ({ kind: 'ready' as const })) }
   ctx.provide('layout', layout)
   ctx.provide('uiWorkspace', uiWorkspace as never)
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -74,9 +74,9 @@ describe('ui-sidebar apply', () => {
     expect(injected.hooks.panels.getSnapshot()).toEqual([])
     expect(b.slots.entries('main')).toEqual([])
     // Both arms delegate to the Workspace UI's shared New Session action.
-    injected.startSession('workspace' as never)
+    await expect(injected.startSession('workspace' as never)).resolves.toEqual({ kind: 'ready' })
     expect(b.uiWorkspace.startSession).toHaveBeenCalledWith('workspace')
-    injected.startSession()
+    await expect(injected.startSession()).resolves.toEqual({ kind: 'ready' })
     expect(b.uiWorkspace.startSession).toHaveBeenLastCalledWith(undefined)
     injected.toggleSidebar()
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()

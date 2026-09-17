@@ -19,7 +19,8 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconNewChatOutline16, IconPanelLeftOutline16, Tooltip,
+  FishLogo, IconCheckOutline16, IconLoadingOutline16, IconNewChatOutline16,
+  IconPanelLeftOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -37,6 +38,14 @@ const COLLAPSE_SETTLE_MS = 150
  * edge — on the way to the conversation, or around a portalled menu.
  */
 const SCROLLBAR_LINGER_MS = 2000
+const NEW_SESSION_PENDING_HOLD_MS = 30_000
+const NEW_SESSION_FAILURE_HOLD_MS = 6000
+
+type NewSessionFeedback = {
+  readonly seq: number
+  readonly kind: 'pending' | 'ready' | 'error'
+  readonly text: string
+}
 
 /** Format complete-build metadata for the local brand badge. */
 function localBuildVersion(): string | undefined {
@@ -97,6 +106,31 @@ export function SidebarRoot({
   renderSlot,
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
+  const newSessionRequest = useRef(0)
+  const feedbackSequence = useRef(0)
+  const [newSessionFeedback, setNewSessionFeedback] = useState<NewSessionFeedback | null>(null)
+  const showNewSessionFeedback = (kind: NewSessionFeedback['kind'], text: string): void => {
+    feedbackSequence.current += 1
+    setNewSessionFeedback({ seq: feedbackSequence.current, kind, text })
+  }
+  const beginNewSession = (): void => {
+    newSessionRequest.current += 1
+    const request = newSessionRequest.current
+    showNewSessionFeedback('pending', t('session.new.preparing'))
+    void startSession().then((result) => {
+      if (newSessionRequest.current !== request) return
+      switch (result.kind) {
+        case 'ready':
+          showNewSessionFeedback('ready', t('session.new.ready'))
+          return
+        case 'superseded':
+          setNewSessionFeedback(null)
+          return
+        case 'error':
+          showNewSessionFeedback('error', t('session.new.failed', { message: result.message }))
+      }
+    })
+  }
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   const [settled, setSettled] = useState(collapsed)
@@ -177,6 +211,23 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
+      {newSessionFeedback !== null && (
+        <Toast
+          key={newSessionFeedback.seq}
+          text={newSessionFeedback.text}
+          icon={newSessionFeedback.kind === 'pending'
+            ? <IconLoadingOutline16 />
+            : newSessionFeedback.kind === 'ready'
+              ? <IconCheckOutline16 />
+              : <IconWarningOutline16 />}
+          {...newSessionFeedback.kind === 'pending'
+            ? { holdMs: NEW_SESSION_PENDING_HOLD_MS }
+            : newSessionFeedback.kind === 'error' ? { holdMs: NEW_SESSION_FAILURE_HOLD_MS } : {}}
+          onDone={() => {
+            setNewSessionFeedback(current => current?.seq === newSessionFeedback.seq ? null : current)
+          }}
+        />
+      )}
       <div className={css.logoRow}>
         {/* Expanded, the brand doubles as a New Session shortcut; the
             collapsed rail's logo is the expand toggle below instead. */}
@@ -185,7 +236,7 @@ export function SidebarRoot({
             type="button"
             className={clsx(css.brand, css.wide)}
             aria-label={t('session.new.label')}
-            onClick={() => { startSession() }}
+            onClick={beginNewSession}
           >
             <span className={css.brandIdentity} aria-hidden="true">
               <span className={css.brandMark}>
@@ -232,7 +283,7 @@ export function SidebarRoot({
           type="button"
           className={css.newSession}
           aria-label={t('session.new.label')}
-          onClick={() => { startSession() }}
+          onClick={beginNewSession}
         >
           <IconNewChatOutline16 size={wide ? 14 : 18} />
           {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}

@@ -12,6 +12,12 @@ import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 
+/** Navigation outcome reported to the sidebar's New Session control. */
+export type SidebarStartSessionResult =
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'superseded' }
+  | { readonly kind: 'error'; readonly message: string }
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
@@ -117,7 +123,7 @@ export type SidebarRootInjected = {
    * and open it; without one, inherit the current Session Workspace, then the
    * recent Workspace, or clear into the New Session pure view when none exist.
    */
-  startSession: (workspaceId?: WorkspaceId) => void
+  startSession: (workspaceId?: WorkspaceId) => Promise<SidebarStartSessionResult>
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
   /** Select the global panel addressed by a sidebar row. */

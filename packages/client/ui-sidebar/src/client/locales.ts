@@ -4,6 +4,9 @@
 export const zh = {
   'session.new': '新会话',
   'session.new.label': '新建会话',
+  'session.new.preparing': '正在准备新会话…',
+  'session.new.ready': '新会话已就绪',
+  'session.new.failed': '新建会话失败：{message}',
   'toggle.open': '打开侧边栏',
   'toggle.collapse': '收起侧边栏',
   'panels.label': '全局面板',
@@ -16,6 +19,9 @@ export type SidebarKey = keyof typeof zh
 export const en = {
   'session.new': 'New Session',
   'session.new.label': 'New session',
+  'session.new.preparing': 'Preparing a new session…',
+  'session.new.ready': 'New session ready',
+  'session.new.failed': 'Could not start a new session: {message}',
   'toggle.open': 'Open sidebar',
   'toggle.collapse': 'Collapse sidebar',
   'panels.label': 'Global panels',

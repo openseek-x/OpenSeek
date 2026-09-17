@@ -47,7 +47,9 @@ async function bench(collapsed = false) {
     inject: ['slots'],
     apply(ctx: Context) {
       ctx.provide('layout', layout)
-      ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
+      ctx.provide('uiWorkspace', {
+        startSession: vi.fn(async () => ({ kind: 'ready' as const })),
+      } as never)
       ctx.provide('locale', locale)
       ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn }), 'panel test: common locale')
       ctx.effect(() => locale.register('sidebar-panel-test', {
