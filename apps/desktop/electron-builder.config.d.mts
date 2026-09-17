@@ -16,6 +16,7 @@ export interface DesktopElectronBuilderConfig {
   readonly extraResources: readonly [{ readonly from: string, readonly to: 'runtime' }]
   readonly mac: {
     readonly identity: string | undefined
+    readonly icon: string
     readonly forceCodeSigning: boolean
     readonly notarize: boolean
     readonly signIgnore: readonly string[]
@@ -23,6 +24,14 @@ export interface DesktopElectronBuilderConfig {
   readonly dmg: {
     readonly sign: boolean
     readonly writeUpdateInfo: boolean
+  }
+  readonly win: {
+    readonly icon: string
+    readonly forceCodeSigning: boolean
+  }
+  readonly linux: {
+    readonly category: string
+    readonly icon: string
   }
   readonly nsis: {
     readonly include: string

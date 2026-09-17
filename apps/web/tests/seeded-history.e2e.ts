@@ -49,6 +49,11 @@ const STICKY_GEOMETRY_EXPECTED = join(SNAPSHOT_DIR, 'sticky-geometry.expected.md
 const MODE = webSnapshotMode()
 const SEED_ID = 'seeded-history-web-e2e'
 
+/** Drop a live calendar prefix while retaining the normalized clock token. */
+function withoutLiveCalendarDate(snapshot: string): string {
+  return snapshot.replace(/\b\d{1,2}\/\d{1,2} (?=\{\{clock\}\})/g, '')
+}
+
 const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.'
 
 /**
@@ -353,7 +358,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // the routed id and the seat resolves it against an advertised row.
     await page.getByRole('button', { name: /^Select model, current/ })
       .waitFor({ timeout: 10_000 })
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = withoutLiveCalendarDate(await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     const expanded = (await captureExpandedTurnProcessAria(
@@ -660,7 +665,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await expect.poll(() => row.count(), { timeout: 10_000 }).toBe(1)
     expect(await row.getByText('permission', { exact: true }).count()).toBe(1)
     expect(await row.getByText('/permission read-only', { exact: true }).count()).toBe(0)
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = withoutLiveCalendarDate(await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)
   }, 60_000)
@@ -696,7 +701,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
       // command/done can arrive before the submit reply releases the composer.
       await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
       await expect.poll(() => page.getByRole('button', { name: 'Add files or run commands' }).isEnabled(), { timeout: 10_000 }).toBe(true)
-      const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+      const snapshot = withoutLiveCalendarDate(await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
         .split(SEED_ID).join('{{seededId}}')
         .split(userId).join('{{userId}}')
       await compareOrRefreshGolden(FEEDBACK_ROW_EXPECTED, snapshot, MODE)

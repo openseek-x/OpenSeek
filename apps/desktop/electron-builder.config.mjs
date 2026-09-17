@@ -15,6 +15,12 @@ import {
 import { resolveDesktopAutoUpdateConfig } from './scripts/desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './scripts/desktop-build-paths.mjs'
 
+const DESKTOP_ICONS = {
+  mac: fileURLToPath(new URL('./assets/icon.icns', import.meta.url)),
+  win: fileURLToPath(new URL('./assets/icon.ico', import.meta.url)),
+  linux: fileURLToPath(new URL('./assets/icon.png', import.meta.url)),
+}
+
 /**
  * Create electron-builder configuration from one release environment.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
@@ -80,6 +86,7 @@ export function createElectronBuilderConfig(
     ],
     mac: {
       category: 'public.app-category.developer-tools',
+      icon: DESKTOP_ICONS.mac,
       identity: forkRelease ? '-' : macOSSigning?.signingIdentity,
       forceCodeSigning: !forkRelease,
       hardenedRuntime: !forkRelease,
@@ -105,6 +112,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
+      icon: DESKTOP_ICONS.win,
       forceCodeSigning: !unsigned && !forkRelease,
       ...(forkRelease ? { verifyUpdateCodeSignature: false } : {}),
       signtoolOptions: {
@@ -115,6 +123,7 @@ export function createElectronBuilderConfig(
     },
     linux: {
       category: 'Development',
+      icon: DESKTOP_ICONS.linux,
       target: ['AppImage'],
     },
     nsis: {

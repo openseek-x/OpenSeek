@@ -12,7 +12,7 @@ concurrency:
 env:
   DSH_TELEMETRY_DISABLED: '1'
   DSH_DESKTOP_APP_ID: ai.deepseek.harness
-  OPENSEEK_DESKTOP_RELEASE: '0.1.9'
+  OPENSEEK_DESKTOP_RELEASE: '0.1.10'
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 jobs:
   package:
