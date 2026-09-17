@@ -28,6 +28,14 @@ it('retains one shared resource consumer after the Desktop host overlay', () => 
     ])
     expect(rows.filter(row => row.name === '@deepseek-ai/dsh-mcp-client')).toEqual([])
     expect(rows.find(row => row.id === 'webserver')?.disabled).toBe(true)
+    expect(rows.filter(row => row.name === '@deepseek-ai/dsh-host-directory-picker-browse')).toEqual([
+      { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
+    ])
+    expect(rows.filter(row => row.name === '@deepseek-ai/dsh-client-ui-directory-picker-browse')).toEqual([
+      { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
+    ])
+    expect(rows.filter(row => row.name === '@deepseek-ai/dsh-host-directory-picker-native')).toEqual([])
+    expect(rows.filter(row => row.name === '@deepseek-ai/dsh-client-ui-directory-picker-native')).toEqual([])
     expect(warnings).toEqual([])
   } finally {
     rmSync(home, { recursive: true, force: true })
