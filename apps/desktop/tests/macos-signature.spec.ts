@@ -137,7 +137,7 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'darwin',
       DSH_DESKTOP_TARGET_ARCH: 'arm64',
-      OPENSEEK_DESKTOP_RELEASE: '0.1.10',
+      OPENSEEK_DESKTOP_RELEASE: '0.1.11',
     }
     expect(isOpenSeekRelease(environment)).toBe(true)
     const config = createElectronBuilderConfig(environment, 'darwin', 'arm64')
@@ -151,7 +151,7 @@ describe('desktop macOS release signature', () => {
   })
 
   it('rejects an OpenSeek release value that does not name the reviewed desktop version', () => {
-    expect(() => isOpenSeekRelease({ OPENSEEK_DESKTOP_RELEASE: '0.1.9' }))
+    expect(() => isOpenSeekRelease({ OPENSEEK_DESKTOP_RELEASE: '0.1.10' }))
       .toThrow(/reviewed desktop version/u)
   })
 
