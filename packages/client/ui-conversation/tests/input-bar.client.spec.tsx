@@ -98,6 +98,7 @@ interface BenchOptions {
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
+  bindFocus?: (focus: () => void) => () => void
 }
 
 /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
@@ -186,6 +187,7 @@ function bench(over?: BenchOptions) {
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
+    bindFocus: over?.bindFocus ?? (() => () => {}),
     addFiles: over?.addFiles ?? (() => null),
     useFileUploads: bindSnapshotSelector(createSnapshotStore<DraftFileUploads>(over?.fileUploads ?? {})),
     retryFileUpload: undefined,
@@ -244,6 +246,26 @@ function bench(over?: BenchOptions) {
     get inputDisabled() { return textarea.getAttribute('aria-disabled') === 'true' },
   }
 }
+
+describe('composer focus binding', () => {
+  it('binds an explicit focus request to the mounted editor and releases it on unmount', () => {
+    let requestFocus: (() => void) | undefined
+    const dispose = vi.fn()
+    const bindFocus = vi.fn((focus: () => void) => {
+      requestFocus = focus
+      return dispose
+    })
+    const { textarea, view } = bench({ bindFocus })
+    const other = document.createElement('button')
+    view.container.append(other)
+    other.focus()
+
+    act(() => { requestFocus?.() })
+    expect(document.activeElement).toBe(textarea)
+    view.unmount()
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+})
 
 function attachmentOwner(slotCalls: readonly { key: string; owner: unknown }[]): ComposerAttachmentsOwnerProps {
   for (let i = slotCalls.length - 1; i >= 0; i -= 1) {

@@ -216,13 +216,15 @@ function bench(options: BenchOptions = {}) {
   const directoryPicker = new FakeDirectoryPicker()
   const workspaces = new FakeWorkspaces(options.workspaces ?? workspaceState([], [], 'pending'))
   const sessions = new FakeSessions(options.sessions ?? sessionState([], undefined, 'pending'))
+  const focusComposer = vi.fn<(sessionId: SessionId | undefined) => void>()
   const uiWorkspace = new UiWorkspaceService(
     ctx,
     directoryPicker.remote,
     workspaces,
     sessions as unknown as ISessions,
+    focusComposer,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel }
+  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, focusComposer }
 }
 
 async function flush(): Promise<void> {
@@ -431,6 +433,30 @@ describe('UiWorkspaceService', () => {
     await vi.waitFor(() => {
       expect(warning).toHaveBeenCalledWith('new session failed:', expect.any(Error))
     })
+  })
+
+  it('focuses the reused blank Session and the no-Workspace composer', async () => {
+    const blank = summary('blank', { blank: true, cwd: '/w/alpha' })
+    const b = bench({
+      sessions: sessionState([blank], blank.id),
+      workspaces: workspaceState([workspace('alpha', [blank.id])]),
+    })
+
+    b.uiWorkspace.startSession()
+    await vi.waitFor(() => {
+      expect(b.sessions.open).toHaveBeenCalledWith(blank.id)
+    })
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.focusComposer).toHaveBeenCalledExactlyOnceWith(blank.id)
+
+    const empty = bench({
+      sessions: sessionState(),
+      workspaces: workspaceState([]),
+    })
+    empty.uiWorkspace.startSession()
+    expect(empty.sessions.clear).toHaveBeenCalledOnce()
+    expect(empty.selectPanel).toHaveBeenCalledWith(null)
+    expect(empty.focusComposer).toHaveBeenCalledExactlyOnceWith(undefined)
   })
 
   it('opens the recent Workspace after both baselines arrive', async () => {

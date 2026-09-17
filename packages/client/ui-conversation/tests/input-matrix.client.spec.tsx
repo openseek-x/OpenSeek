@@ -69,6 +69,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
+    bindFocus: () => () => {},
     addFiles: () => null,
     useFileUploads: bindSnapshotSelector(createSnapshotStore({})),
     retryFileUpload: undefined,
