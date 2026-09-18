@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-new-session-composer-focus.md
-2026-09-17-new-session-composer-focus.md: f0497659b7e5ec5d88553fb00ec57bb271fdfb2f
-2026-09-17-new-session-composer-focus.zh.md: 7361914e0f3e9a7595c98d39ecbfdd09147b2134
+2026-09-17-new-session-composer-focus.md: c782e1a914496133abea108b198f679a8d4c529f
+2026-09-17-new-session-composer-focus.zh.md: 0af2a742e39fd6ad444142f713ed68df0e7caa36

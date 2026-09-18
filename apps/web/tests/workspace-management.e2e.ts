@@ -696,4 +696,25 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // the seed it reuses is owned (and inventory-guarded) by seeded-history.
     await assertFixtureInventory(SNAPSHOT_DIR, ['.gitkeep', 'directory-browser.expected.md'])
   })
+
+  it('starts the first New Session when an empty Workspace row is clicked', async () => {
+    const path = join(scaffold.workspaceCwd, 'empty-ws')
+    await mkdir(path)
+    const workspace = await scaffold.ctx.workspaceRegistry.create(path)
+    expect(workspace.sessionIds).toHaveLength(0)
+    const row = page.getByRole('treeitem').filter({ hasText: 'empty-ws' }).first()
+    await row.waitFor({ timeout: 10_000 })
+    await row.click()
+    await expect.poll(
+      () => workspace.sessionIds.length,
+      { timeout: 10_000 },
+    ).toBe(1)
+    const section = row.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
+    await section.locator('[role="treeitem"][aria-selected="true"]').waitFor({ timeout: 10_000 })
+    await expect.poll(
+      () => page.locator('[data-composer-input][contenteditable="true"]')
+        .evaluate(element => element === document.activeElement),
+      { timeout: 10_000 },
+    ).toBe(true)
+  })
 })
