@@ -11,8 +11,8 @@ export function isOpenSeekRelease(env) {
   const requested = env.OPENSEEK_DESKTOP_RELEASE
   if (requested === undefined) return false
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-  if (requested !== '0.1.13' || requested !== version) {
-    throw new Error('OpenSeek release: OPENSEEK_DESKTOP_RELEASE must match the reviewed desktop version 0.1.13')
+  if (requested !== '0.1.14' || requested !== version) {
+    throw new Error('OpenSeek release: OPENSEEK_DESKTOP_RELEASE must match the reviewed desktop version 0.1.14')
   }
   return true
 }
