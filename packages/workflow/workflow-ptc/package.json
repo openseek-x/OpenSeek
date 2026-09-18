@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-workflow-ptc",
   "description": "Workflow orchestration in the shared sandboxed Node PTC runtime",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "publishConfig": {
     "access": "public"
   },
