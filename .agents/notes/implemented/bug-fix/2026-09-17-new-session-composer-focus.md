@@ -14,6 +14,8 @@ The Conversation service owns composer-focus delivery for Session editors and th
 
 New Session requests focus in `openWorkspace`'s synchronous preparation callback. Reusing the selected blank focuses its existing editor, while a newly created blank consumes the pending request after its InputBar mounts. Without a Workspace, New Session clears the Session selection and focuses the resident Workspace trigger.
 
+An empty real Workspace header invokes the same New Session path instead of toggling an empty section. This gives a registered Workspace with no attached Session a visible retry action; headers for Workspaces that already contain Sessions retain expand-or-collapse behavior.
+
 `UiWorkspace.startSession()` reports `ready`, `superseded`, or `error` after the navigation attempt. The sidebar uses that result to show a pending status followed by a visible ready confirmation or a failure banner with the concrete reason. A request superseded by later navigation removes its pending status without claiming success.
 
 ## Alternatives considered
@@ -26,6 +28,6 @@ New Session requests focus in `openWorkspace`'s synchronous preparation callback
 
 ## Consequences
 
-New Session remains idempotent for blank Session data while every successful activation moves keyboard focus to the actionable surface and displays a completion confirmation. Draft and Session identity remain unchanged when the blank is reused. Focus delivery has one owner, preserves Lexical selection, and handles navigation that completes before React mounts the new composer. Failures are visible instead of existing only in the console.
+New Session remains idempotent for blank Session data while every successful activation moves keyboard focus to the actionable surface and displays a completion confirmation. An empty Workspace row cannot remain an inert gray group: clicking it creates or reuses its blank Session and focuses the composer. Draft and Session identity remain unchanged when the blank is reused. Focus delivery has one owner, preserves Lexical selection, and handles navigation that completes before React mounts the new composer. Failures are visible instead of existing only in the console.
 
-Conversation service tests cover mounted and delayed bindings. InputBar tests cover editor focus and disposer cleanup. Workspace tests cover ready, superseded, and failed outcomes. Sidebar tests cover pending, ready, failure, and superseded feedback. The assembled Web and packaged Desktop flows verify that clicking New Session on the selected blank moves focus from the button to the composer and shows the ready confirmation.
+Conversation service tests cover mounted and delayed bindings. InputBar tests cover editor focus and disposer cleanup. Workspace tests cover ready, superseded, and failed outcomes. Sidebar tests cover pending, ready, failure, and superseded feedback. The assembled Web flow also registers an empty Workspace directly, clicks its gray header, and verifies that the Host attaches one Session, the new row becomes selected, and the composer receives focus. The packaged Desktop flow verifies that clicking New Session on the selected blank moves focus from the button to the composer and shows the ready confirmation.

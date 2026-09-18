@@ -406,6 +406,11 @@ function SessionTree({
                 home={home}
                 t={t}
                 onToggle={() => {
+                  if (group.workspaceId !== undefined && group.sessionCount === 0) {
+                    setGroupExpanded(group.key, true)
+                    startSession(group.workspaceId)
+                    return
+                  }
                   if (group.expanded) {
                     setExpandedSessionGroups(keys => keys.filter(key => key !== group.key))
                   }

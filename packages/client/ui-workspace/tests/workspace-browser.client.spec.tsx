@@ -695,6 +695,17 @@ describe('WorkspaceBrowser', () => {
     expect(startSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
+  it('starts the first session when an empty Workspace row is clicked', () => {
+    const startSession = vi.fn()
+    const b = mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
+      startSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
+    expect(startSession).toHaveBeenCalledExactlyOnceWith(wid('alpha'))
+  })
+
   it('auto-expands the Ungrouped bucket for a loose current session and exposes no Workspace actions', () => {
     mount({
       useSessions: hook(sessionState([summary('loose', 1)], { current: sid('loose') })),
