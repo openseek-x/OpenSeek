@@ -39,14 +39,14 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-session-format": "workspace:^",
-    "@deepseek-ai/dsh-util-values": "workspace:^"
+    "@deepseek-ai/dsh-session-format": "workspace:*",
+    "@deepseek-ai/dsh-util-values": "workspace:*"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-session": "workspace:*"
   }
 }

@@ -29,15 +29,15 @@
     "@deepseek-ai/dsh": "workspace:*"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sdk-protocol": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-sdk-protocol": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sdk-protocol": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-sdk-protocol": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
   }
 }

@@ -12,7 +12,9 @@ DeepSeek Harness now includes an Electron Desktop application, but its signed pr
 
 OpenSeek ships the upstream Desktop implementation with the complete `dsh` family at version `0.1.14`. `OPENSEEK_DESKTOP_RELEASE=0.1.14` selects the one reviewed distribution: macOS resources and the application use ad-hoc signatures, Windows artifacts remain unsigned, and electron-builder emits target-specific GitHub updater metadata for `openseek-x/OpenSeek`. The release workflow builds macOS arm64, macOS x64, and Windows x64 on native runners, verifies the release tag, collects every installer and updater asset, records checksums, and creates the GitHub Release only after every package job succeeds.
 
-The Desktop package explicitly uses its retained native icon files for macOS, Windows, and Linux targets so the installed application keeps its product icon rather than Electron's fallback icon.
+The Desktop package uses the upstream native macOS and Windows icon resources so the installed application keeps its product icon rather than Electron's fallback icon.
+
+The release workflow also requires an OpenSeek-owned HTTPS service that answers `/api/v0/check_client_update`. An absent policy origin fails packaging before publication, and the installed application retains its mandatory-update check.
 
 The selector checks the Desktop manifest version, so a later release cannot inherit certificate-free publication solely because signing variables are absent. Builds without the selector retain the upstream signed release configuration and require its Apple or Windows release environment.
 

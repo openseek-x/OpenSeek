@@ -14,7 +14,7 @@ The Conversation service owns composer-focus delivery for Session editors and th
 
 New Session requests focus in `openWorkspace`'s synchronous preparation callback. Reusing the selected blank focuses its existing editor, while a newly created blank consumes the pending request after its InputBar mounts. Without a Workspace, New Session clears the Session selection and focuses the resident Workspace trigger.
 
-An empty real Workspace header invokes the same New Session path instead of toggling an empty section. This gives a registered Workspace with no attached Session a visible retry action; headers for Workspaces that already contain Sessions retain expand-or-collapse behavior.
+An empty leaf Workspace header invokes the same New Session path instead of toggling an empty section; a parent with child Workspaces still collapses and expands. This gives a registered Workspace with no attached Session a visible retry action; headers for Workspaces that already contain Sessions retain expand-or-collapse behavior.
 
 `UiWorkspace.startSession()` reports `ready`, `superseded`, or `error` after the navigation attempt. The sidebar uses that result to show a pending status followed by a visible ready confirmation or a failure banner with the concrete reason. A request superseded by later navigation removes its pending status without claiming success.
 

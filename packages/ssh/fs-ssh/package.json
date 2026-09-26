@@ -27,21 +27,21 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-ssh": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-ssh": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:~",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-ssh": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-ssh": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*"
   }
 }

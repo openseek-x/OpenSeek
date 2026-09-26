@@ -7,22 +7,22 @@
   "type": "module",
   "main": "lib/index.js",
   "files": [
-    "lib/index.js",
-    "config/desktop.cordis.patch.yml"
+    "lib/index.js"
   ],
   "dependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/cordis-plugin-include": "workspace:^",
-    "@deepseek-ai/dsh": "workspace:^",
-    "@deepseek-ai/dsh-api-gateway": "workspace:^",
-    "@deepseek-ai/dsh-app-boot": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-modules": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-directory-picker-browse": "workspace:^",
-    "@deepseek-ai/dsh-cmdline": "workspace:^",
-    "@deepseek-ai/dsh-host-directory-picker-browse": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
-    "@deepseek-ai/dsh-web-frontend": "workspace:^"
+    "@deepseek-ai/libreoffice-kit": "^0.1.1",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh": "workspace:*",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-home-paths": "workspace:*",
+    "@deepseek-ai/dsh-jobs": "workspace:*",
+    "@deepseek-ai/dsh-schedule": "workspace:*",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:*",
+    "@deepseek-ai/dsh-skill-office": "workspace:*",
+    "@deepseek-ai/dsh-deepseek-account": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*"
   }
 }

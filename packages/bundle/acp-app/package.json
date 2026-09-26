@@ -34,15 +34,15 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-acp": "workspace:^",
-    "@deepseek-ai/dsh-cmdline": "workspace:^",
+    "@deepseek-ai/dsh-acp": "workspace:*",
+    "@deepseek-ai/dsh-cmdline": "workspace:*",
     "commander": "^15.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis-plugin-include": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis": "workspace:~"
   }
 }

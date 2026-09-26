@@ -27,13 +27,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-host-directory-picker": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/dsh-host-directory-picker": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~"
   }
 }

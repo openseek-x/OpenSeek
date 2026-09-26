@@ -26,13 +26,14 @@
     "@vitest/spy": "^4.1.8"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-settings-controller": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-api-settings-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "typescript": "^6.0.3"
   },
   "files": [

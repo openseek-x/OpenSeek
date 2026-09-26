@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-14-daily-upstream-sync-pull-requests.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-14-daily-upstream-sync-pull-requests.md
-2026-08-14-daily-upstream-sync-pull-requests.md: 497c588fd13256c4f4bb7c73dad59e0f36806629
-2026-08-14-daily-upstream-sync-pull-requests.zh.md: d7c1e24f40a53d3eff4fada604c4bf5458834b2d
+/agent-note-daily-upstream-synchronization-pull-requests:
+  en: c3676a3bb21078a8
+  zh: ae83ae0df8825486
+/agent-note-daily-upstream-synchronization-pull-requests/problem:
+  en: 3151c452b66a8ff5
+  zh: 1b6b74bd757032b1
+/agent-note-daily-upstream-synchronization-pull-requests/decision:
+  en: c340c62d327c4cbc
+  zh: 361f4b3bee00b072
+/agent-note-daily-upstream-synchronization-pull-requests/alternatives-considered:
+  en: 8cc77d4adce5d51a
+  zh: 5447f9a1eaa63d5b
+/agent-note-daily-upstream-synchronization-pull-requests/consequences:
+  en: 7cddc3729df04ef0
+  zh: 3dd7e4a531b15e4d

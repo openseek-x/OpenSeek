@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-16-openseek-desktop-distribution.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-16-openseek-desktop-distribution.md
-2026-09-16-openseek-desktop-distribution.md: 67a82412143111ae01dd9d035619b1956ff77beb
-2026-09-16-openseek-desktop-distribution.zh.md: 0508539c0860dfd0c68fa30224afdbcc473644e1
+/agent-note-openseek-desktop-distribution:
+  en: b6995ba68f1c8fdd
+  zh: 183da40546d75ceb
+/agent-note-openseek-desktop-distribution/problem:
+  en: 2c94084034090706
+  zh: f67deea3b2ba8a8d
+/agent-note-openseek-desktop-distribution/decision:
+  en: 263869bb0daa328c
+  zh: 6db2cf4120a02154
+/agent-note-openseek-desktop-distribution/alternatives-considered:
+  en: 767ef473c90d79eb
+  zh: b95792d0ca054c3a
+/agent-note-openseek-desktop-distribution/consequences:
+  en: 21cc1e31ac81d5e1
+  zh: e53bc97cfb594c66

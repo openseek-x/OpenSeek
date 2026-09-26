@@ -24,19 +24,19 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-ptc-runtime": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-util-values": "workspace:^"
+    "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
+    "@deepseek-ai/dsh-timeout": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-util-values": "workspace:*"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-ptc-runtime": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-util-values": "workspace:^"
+    "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
+    "@deepseek-ai/dsh-timeout": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-util-values": "workspace:*"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:~"
   },
   "publishConfig": {
     "access": "public"

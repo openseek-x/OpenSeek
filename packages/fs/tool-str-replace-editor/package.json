@@ -26,29 +26,31 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-output-retention": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-fs-local": "workspace:^",
-    "@deepseek-ai/dsh-fs-observation-policy": "workspace:^",
-    "@deepseek-ai/dsh-fs-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^"
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-fs-local": "workspace:*",
+    "@deepseek-ai/dsh-fs-observation-policy": "workspace:*",
+    "@deepseek-ai/dsh-fs-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-output-retention": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
   }
 }
