@@ -607,12 +607,13 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      expect(server.requests).toHaveLength(2)
-      expect(server.paths).toEqual(['/v1/messages', '/v1/messages'])
+      // The one-shot agent request is required; background title work may be retried or
+      // cancelled as the process settles. The separate compatibility test pins title delivery.
+      expect(server.requests.filter(request => request.max_tokens === 256_000)).toHaveLength(1)
+      expect(server.requests.every(request => request.max_tokens === 256_000 || request.max_tokens === 64)).toBe(true)
+      expect(server.paths.every(path => path === '/v1/messages')).toBe(true)
       const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
-      const titleRequest = server.requests.find(request => request.max_tokens === 64)
       expect(agentRequest?.output_config).toEqual({ effort: 'low' })
-      expect(titleRequest).toBeDefined()
       const header = (parseJsonl(result.stdout)
         .map(record => record.event)
         .find((event): event is JsonObject => (
