@@ -607,13 +607,14 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      // The one-shot agent request is required; background title work may be retried or
-      // cancelled as the process settles. The separate compatibility test pins title delivery.
-      expect(server.requests.filter(request => request.max_tokens === 256_000)).toHaveLength(1)
+      // The one-shot app may retry its foreground request and may start or cancel
+      // background title work while settling. Every foreground attempt must carry
+      // the DeepSeek defaults; the separate compatibility test pins title delivery.
+      const agentRequests = server.requests.filter(request => request.max_tokens === 256_000)
+      expect(agentRequests.length).toBeGreaterThanOrEqual(1)
       expect(server.requests.every(request => request.max_tokens === 256_000 || request.max_tokens === 64)).toBe(true)
       expect(server.paths.every(path => path === '/v1/messages')).toBe(true)
-      const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
-      expect(agentRequest?.output_config).toEqual({ effort: 'low' })
+      for (const request of agentRequests) expect(request.output_config).toEqual({ effort: 'low' })
       const header = (parseJsonl(result.stdout)
         .map(record => record.event)
         .find((event): event is JsonObject => (
