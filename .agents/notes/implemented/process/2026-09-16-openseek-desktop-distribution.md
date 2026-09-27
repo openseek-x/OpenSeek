@@ -10,11 +10,11 @@ DeepSeek Harness now includes an Electron Desktop application, but its signed pr
 
 ## Decision
 
-OpenSeek ships the upstream Desktop implementation with the complete `dsh` family at version `0.1.14`. `OPENSEEK_DESKTOP_RELEASE=0.1.14` selects the one reviewed distribution: macOS resources and the application use ad-hoc signatures, Windows artifacts remain unsigned, and electron-builder emits target-specific GitHub updater metadata for `openseek-x/OpenSeek`. The release workflow builds macOS arm64, macOS x64, and Windows x64 on native runners, verifies the release tag, collects every installer and updater asset, records checksums, and creates the GitHub Release only after every package job succeeds.
+OpenSeek ships the upstream Desktop implementation with the complete `dsh` family at version `0.1.15`. `OPENSEEK_DESKTOP_RELEASE=0.1.15` selects the one reviewed distribution: macOS resources and the application use ad-hoc signatures, Windows artifacts remain unsigned, and electron-builder emits target-specific GitHub updater metadata for `openseek-x/OpenSeek`. The release workflow builds macOS arm64, macOS x64, and Windows x64 on native runners, verifies the release tag, collects every installer and updater asset, records checksums, and creates the GitHub Release only after every package job succeeds.
 
 The Desktop package uses the upstream native macOS and Windows icon resources so the installed application keeps its product icon rather than Electron's fallback icon.
 
-The release workflow also requires an OpenSeek-owned HTTPS service that answers `/api/v0/check_client_update`. An absent policy origin fails packaging before publication, and the installed application retains its mandatory-update check.
+OpenSeek has no HTTPS service for `/api/v0/check_client_update`. The owner explicitly approved omitting mandatory-update policy only from version-bound OpenSeek packages. Their installed applications do not enforce remote minimum versions, while the ordinary GitHub updater remains configured. Without `OPENSEEK_DESKTOP_RELEASE`, the upstream signed package still requires a policy origin before preparation or signing.
 
 The selector checks the Desktop manifest version, so a later release cannot inherit certificate-free publication solely because signing variables are absent. Builds without the selector retain the upstream signed release configuration and require its Apple or Windows release environment.
 
@@ -46,4 +46,4 @@ Cloudflare preview deployment is disabled until OpenSeek sets `DSH_CLOUDFLARE_PR
 
 ## Consequences
 
-Users can download matching macOS and Windows installers from the OpenSeek release. Gatekeeper and SmartScreen can warn because the packages do not establish a platform publisher identity. A release after `0.1.14` requires a reviewed source change to the release value, test, workflow, and documentation; obtaining platform certificates remains the path to authenticated distribution.
+Users can download matching macOS and Windows installers from the OpenSeek release. Gatekeeper and SmartScreen can warn because the packages do not establish a platform publisher identity. A release after `0.1.15` requires a reviewed source change to the release value, test, workflow, and documentation; obtaining platform certificates remains the path to authenticated distribution.

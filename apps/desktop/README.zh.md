@@ -211,7 +211,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 ### OpenSeek 分发
 
-OpenSeek `0.1.14` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.14`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。发布工作流还要求 `OPENSEEK_DESKTOP_POLICY_ORIGIN` 指向 OpenSeek 自有的 HTTPS 服务，并由该服务响应 `/api/v0/check_client_update`；地址缺失或无效时打包会拒绝继续，应用保留强制更新检查。
+OpenSeek `0.1.15` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.15`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。OpenSeek 尚无响应 `/api/v0/check_client_update` 的策略服务；显式选择此模式后，打包不会嵌入强制更新策略，安装后的应用也不会强制执行远程最低版本要求。普通 GitHub 更新检查仍可使用。未设置该选择器的构建仍要求有效策略源站。
 
 这些安装包包含 macOS 和 Windows 的 Desktop 应用图标，但不具有 Apple Developer ID、macOS notarization 或 Windows Authenticode 身份。Gatekeeper 和 SmartScreen 可能在安装前显示警告。后续 OpenSeek Release 必须显式修改源码中的版本绑定值及其工作流校验；缺少证书配置不会自动选择此分发模式。
 
@@ -394,7 +394,7 @@ Windows 下载完成后的更新确认说明应用会在安装期间关闭、完
 
 ### 强制更新策略
 
-[强更客户端决策](../../.agents/notes/implemented/feature/2026-09-11-desktop-mandatory-update-client.zh.md)负责策略查询和阻塞窗口。打包读取 `.env.windows` 或 `.env.macos`：`DSH_DESKTOP_AUTO_UPDATE_ENV=test`（默认值）选择 `DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN`；`production` 选择 `DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN`。模板将两个源站留空；在 Git 忽略的目标 dotenv 文件中填写所选部署的源站。在准备产物或签名前，所选源站必须配置，包括未签名和仅准备构建；未选环境的源站可不填。这些配置不会回退到父进程环境或另一部署环境。打包将选定策略与应用 ID 写入元数据；打包应用忽略运行时覆盖。
+[强更客户端决策](../../.agents/notes/implemented/feature/2026-09-11-desktop-mandatory-update-client.zh.md)负责策略查询和阻塞窗口。打包读取 `.env.windows` 或 `.env.macos`：`DSH_DESKTOP_AUTO_UPDATE_ENV=test`（默认值）选择 `DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN`；`production` 选择 `DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN`。模板将两个源站留空；在 Git 忽略的目标 dotenv 文件中填写所选部署的源站。在准备产物或签名前，所选源站必须配置，包括未签名和仅准备构建；未选环境的源站可不填。上文所述、与版本绑定的 OpenSeek 分发是唯一的打包例外。这些配置不会回退到父进程环境或另一部署环境。打包将选定策略与应用 ID 写入元数据；打包应用忽略运行时覆盖。
 
 `DSH_DESKTOP_MANDATORY_UPDATE_CONFIG` JSON 提供测试登录源站，以及可选的轮询和下载页面选项；打包拒绝其中的 `origin` 和 `authentication`。页面白名单默认只包含所选服务源站；需要其他已批准下载页面源站时应显式配置。测试包选择 `feishu-test`，且必须在 `DSH_DESKTOP_MANDATORY_UPDATE_CONFIG` 中配置 `allowedAuthOrigins`；正式包选择 `anonymous`，并拒绝该字段。每个登录源站必须是没有凭据、路径、查询或片段的 HTTPS origin。登录窗口仅允许文档导航到所选策略源站和这些已配置源站。策略请求拒绝重定向；仅测试鉴权携带网关 Cookie。未打包开发模式则从此变量读取完整策略 JSON，并要求 `DSH_DESKTOP_APP_ID`；缺少 JSON 会禁用开发模式策略查询，仅匿名开发允许 HTTP `127.0.0.1`。用户发起常规检查时会并发触发策略检查，但不会等待或展示策略失败。只有已确认的强更决定可以关闭常规弹窗。测试环境鉴权会等待当前常规弹窗结束，取消或失败不会丢弃 updater 结果。
 

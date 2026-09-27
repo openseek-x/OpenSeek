@@ -141,12 +141,11 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'darwin',
       DSH_DESKTOP_TARGET_ARCH: 'arm64',
-      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
-      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
-      OPENSEEK_DESKTOP_RELEASE: '0.1.14',
+      OPENSEEK_DESKTOP_RELEASE: '0.1.15',
     }
     expect(isOpenSeekRelease(environment)).toBe(true)
     const config = createElectronBuilderConfig(environment, 'darwin', 'arm64')
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
     expect(config).toMatchObject({
       mac: { identity: '-', forceCodeSigning: false, notarize: false },
       dmg: { sign: false },

@@ -53,3 +53,10 @@ it.each([{ unsigned: true }, { prepareOnly: true }, {}])('fails before signing/p
       .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
   }
 })
+
+it.each(['win32', 'darwin'] as const)('permits only the version-bound OpenSeek %s package without mandatory policy', (platform) => {
+  const environment = { DSH_DESKTOP_APP_ID: 'com.example.test', OPENSEEK_DESKTOP_RELEASE: '0.1.15' }
+  expect(() => { validateDesktopPackageEnvironment(environment, { platform, arch: 'x64' }) }).not.toThrow()
+  expect(() => { validateDesktopPackageEnvironment({ ...environment, OPENSEEK_DESKTOP_RELEASE: '0.1.14' },
+    { platform, arch: 'x64' }) }).toThrow('reviewed desktop version')
+})
