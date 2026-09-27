@@ -113,7 +113,7 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 
 - **Everyone 仍留在两种 restricting 列表中，但不再带来写权限。** 保活组是早期 DLL 初始化与 CNG 所必需的；如今 Low 标签会拒绝对被标记根目录之外、由 Everyone 授权的写入，因此这一旧缺口已关闭。
 - **在授权根目录内，能力 ACE 的 DELETE 位是唯一的删除授权来源。** 授权会向 world SID 拒绝 `FILE_DELETE_CHILD`，这同时移除了环境性默认行为：自身 DACL 未授予 DELETE 的文件不再能凭父目录权限删除——受限子进程与用户自身进程皆然。用户日常删除仍然可用，因为工作区 DACL 直接向其授予 DELETE。
-- **拒绝项只继承到子目录，且子目录的 FullControl 打开会被拒。** `FILE_DELETE_CHILD` 只在目录上被评估，因此该 ACE 带 `CONTAINER_INHERIT_ACE`、绝不落到文件上（它的位 `0x40` 属于 `FILE_ALL_ACCESS`，若落到文件上会让用户、Administrators、SYSTEM 或 DSH host 的每次 `GENERIC_ALL`／`FullControl` 打开都被拒绝）。授权根内的目录保留该拒绝项，因而会拒绝这类打开；基于 `DELETE` 的删除、`MAXIMUM_ALLOWED` 与常规读写打开不受影响——两种结果都已被 runner 套件钉住。
+- **拒绝项只继承到子目录，且受限子进程的目录 FullControl 打开会被拒。** `FILE_DELETE_CHILD` 只在目录上被评估，因此该 ACE 带 `CONTAINER_INHERIT_ACE`、绝不落到文件上（它的位 `0x40` 属于 `FILE_ALL_ACCESS`，若落到文件上会让用户、Administrators、SYSTEM 或 DSH host 的每次 `GENERIC_ALL`／`FullControl` 打开都被拒绝）。授权根内的目录保留该拒绝项。受限令牌会禁用备份／还原特权，因此这类打开会被拒；启用这些特权的环境进程可通过 `FILE_FLAG_BACKUP_SEMANTICS` 绕过 DACL 检查。基于 `DELETE` 的删除、`MAXIMUM_ALLOWED` 与常规读写打开不受影响。
 - **写入与删除受限；读取、网络与进程可见性不受限。** 两层都不交叉检查读取，因此受限子进程可以读取调用者可读的任何文件（包括其他工作区中的文件）并打开套接字；`read-only` 因而需要读侧策略才能表达。
 - **硬链接是文件对象别名，而非路径别名。** 传播到已有硬链接上的可继承工作区授权会标记并授权底层同一文件的安全描述符，因此同一对象也可通过外部别名写入；拒绝工作区中的所有多链接文件不具可行性，因为普通 pnpm 安装会使用硬链接。
 - **控制台隔离不可用。** 以 `CREATE_NO_WINDOW` / `CREATE_NEW_CONSOLE` 创建的子进程在 DLL 初始化期间以 `STATUS_DLL_INIT_FAILED`（`0xC0000142`）死亡；子进程共享宿主控制台，基于管道的 stdio 重定向不受影响。

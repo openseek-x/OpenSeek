@@ -527,12 +527,11 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     }
   }, 30_000)
 
-  it('a FullControl open inside a granted root still works for files (the deny inherits to containers only)', () => {
-    // The ambient-delete deny is 0x40, a member of FILE_ALL_ACCESS: inheriting
-    // it onto files would deny every GENERIC_ALL/FullControl open by the user,
-    // Administrators, SYSTEM, or the DSH host. Directories inside a granted
-    // root keep the deny (that is where FILE_DELETE_CHILD is evaluated), so a
-    // FullControl open of a DIRECTORY is the documented cost of the deny.
+  it('ambient FullControl file opens survive while the confined child cannot fully open directories', () => {
+    // The 0x40 deny must stay off files, where it would block ambient
+    // FullControl opens. The confined token drops backup/restore privileges,
+    // so its directory open proves the inherited deny even when an elevated
+    // host process can override ACL checks with backup semantics.
     const granted = join(scratchRoot, 'fullcontrol-root')
     const child = join(granted, 'child')
     mkdirSync(granted)
@@ -558,11 +557,16 @@ TryOpen 'FILE' '${join(granted, 'file.txt')}'
 TryOpen 'NESTED-FILE' '${join(child, 'deep.txt')}'
 TryOpen 'DIRECTORY' '${child}'
 `
-      const result = spawnSync('pwsh', ['-NoLogo', '-NonInteractive', '-NoProfile', '-Command', probe], { encoding: 'utf8', timeout: 60_000 })
-      expect(result.status, `stderr: ${result.stderr}`).toBe(0)
-      expect(result.stdout).toContain('FILE: OK')
-      expect(result.stdout).toContain('NESTED-FILE: OK')
-      expect(result.stdout).toContain('DIRECTORY: DENIED')
+      const ambient = spawnSync('pwsh', ['-NoLogo', '-NonInteractive', '-NoProfile', '-Command', probe], { encoding: 'utf8', timeout: 60_000 })
+      expect(ambient.status, `stderr: ${ambient.stderr}`).toBe(0)
+      expect(ambient.stdout).toContain('FILE: OK')
+      expect(ambient.stdout).toContain('NESTED-FILE: OK')
+      const confined = runRunner([
+        '--workspace', granted, '--temp', isolatedTemp, '--mode', 'workspace-write',
+        '--', 'pwsh', '/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe,
+      ], 60_000)
+      expect(confined.status, `stderr: ${confined.stderr}`).toBe(0)
+      expect(confined.stdout).toContain('DIRECTORY: DENIED')
     } finally {
       grant.dispose()
       rmSync(granted, { recursive: true, force: true })
