@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-17-new-session-composer-focus.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-new-session-composer-focus.md
-2026-09-17-new-session-composer-focus.md: c782e1a914496133abea108b198f679a8d4c529f
-2026-09-17-new-session-composer-focus.zh.md: 0af2a742e39fd6ad444142f713ed68df0e7caa36
+/agent-note-new-session-activation-feedback:
+  en: c14e45362d33563b
+  zh: 8a5ee6050a6b0984
+/agent-note-new-session-activation-feedback/problem:
+  en: 55c5b299b98c6d58
+  zh: fbb02220108dcbb9
+/agent-note-new-session-activation-feedback/decision:
+  en: 4ba2d2cda2f5157b
+  zh: 61cf2e6e145b5ab2
+/agent-note-new-session-activation-feedback/alternatives-considered:
+  en: 8bd736efb2f367f8
+  zh: f20bc6a8ebbc3e5c
+/agent-note-new-session-activation-feedback/consequences:
+  en: 8c6e1a9c5fead62d
+  zh: 8af480cdc16fdee4

@@ -14,7 +14,7 @@ Conversation 服务负责为 Session editor 和无 Session 的 Workspace 入口�
 
 新会话会在 `openWorkspace` 的同步 preparation 回调中请求焦点。复用已选中的 blank 时聚焦现有 editor；新创建的 blank 会在 InputBar 挂载后消费 pending 请求。没有 Workspace 时，新会话会清空 Session 选择并聚焦常驻的 Workspace 入口。
 
-空的真实 Workspace 标题会调用同一条新会话路径，而不是展开一个空区域。这样，没有附加 Session 的已注册 Workspace 就有一个可见的重试操作；已经包含 Session 的 Workspace 标题仍保留展开或折叠行为。
+没有 Session 和子 Workspace 的叶节点标题会调用同一条新会话路径，而不是展开一个空区域；有子 Workspace 的父节点仍可展开或折叠。这样，没有附加 Session 的已注册 Workspace 就有一个可见的重试操作；已经包含 Session 的 Workspace 标题仍保留展开或折叠行为。
 
 `UiWorkspace.startSession()` 会在导航尝试后报告 `ready`、`superseded` 或 `error`。侧边栏利用该结果先显示准备状态，再显示可见的已就绪确认，或带具体原因的失败横幅。被后续导航替代的请求会移除准备状态，不会宣称成功。
 

@@ -1,0 +1,5 @@
+- treeitem "empty-ws Workspace actions for empty-ws New session in empty-ws" [expanded]:
+  - text: empty-ws
+  - button "Workspace actions for empty-ws"
+  - button "New session in empty-ws"
+- treeitem "New Session" [selected]

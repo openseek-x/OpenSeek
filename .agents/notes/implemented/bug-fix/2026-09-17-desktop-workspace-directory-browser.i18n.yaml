@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-17-desktop-workspace-directory-browser.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-desktop-workspace-directory-browser.md
-2026-09-17-desktop-workspace-directory-browser.md: d213883b76fb54d23228bbab9e64aa35ab0da396
-2026-09-17-desktop-workspace-directory-browser.zh.md: 6c754c39abfb031ddaf749e0d808c8c4fbb95f22
+/agent-note-desktop-workspace-directory-browser:
+  en: 4ba61ff3665f9c05
+  zh: 01b7a602f0d69305
+/agent-note-desktop-workspace-directory-browser/problem:
+  en: 225ed202923a26f8
+  zh: 4ca5e5aa53325978
+/agent-note-desktop-workspace-directory-browser/decision:
+  en: 9d63f6a66a7d2f4a
+  zh: 1bee12ddc9fa8ed5
+/agent-note-desktop-workspace-directory-browser/alternatives-considered:
+  en: a250ee9ca31fe1ae
+  zh: 124297ec0c0036e4
+/agent-note-desktop-workspace-directory-browser/consequences:
+  en: 7205d53a8428a7b0
+  zh: 78288f22db719555
+/agent-note-desktop-workspace-directory-browser/related:
+  en: 56f2ba1ac9d5412e
+  zh: e66725b31a305678

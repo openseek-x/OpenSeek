@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-27-pwsh-bootstrap-single-submit.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-27-pwsh-bootstrap-single-submit.md
+/agent-note-powershell-bootstrap-submits-once:
+  en: 28ac6af2c1d45f3f
+  zh: c0764cdb15576059
+/agent-note-powershell-bootstrap-submits-once/problem:
+  en: 145d2d7c555c663c
+  zh: 64c244ef0025b85a
+/agent-note-powershell-bootstrap-submits-once/decision:
+  en: 6bbafb14325dfee7
+  zh: 94664c61999d31b6
+/agent-note-powershell-bootstrap-submits-once/alternatives-considered:
+  en: 8a842a540637b567
+  zh: 7904a7dafbf84c68
+/agent-note-powershell-bootstrap-submits-once/consequences:
+  en: a58f5add8db9e976
+  zh: c337773a2d2caf05

@@ -10,9 +10,11 @@ DeepSeek Harness 现已包含 Electron Desktop 应用，但 OpenSeek 无法使�
 
 ## Decision
 
-OpenSeek 发布版本为 `0.1.14` 的完整上游 Desktop 实现和 `dsh` 包族。`OPENSEEK_DESKTOP_RELEASE=0.1.14` 会选择唯一经过审查的分发模式：macOS 资源与应用使用 ad-hoc 签名，Windows 产物保持未签名，electron-builder 为 `openseek-x/OpenSeek` 生成目标专用的 GitHub 更新元数据。发布工作流会在原生 runner 上构建 macOS arm64、macOS x64 和 Windows x64，校验发布标签，收集每个安装包和更新产物，记录校验和，并且只在全部打包任务成功后创建 GitHub Release。
+OpenSeek 发布版本为 `0.1.15` 的完整上游 Desktop 实现和 `dsh` 包族。`OPENSEEK_DESKTOP_RELEASE=0.1.15` 会选择唯一经过审查的分发模式：macOS 资源与应用使用 ad-hoc 签名，Windows 产物保持未签名，electron-builder 为 `openseek-x/OpenSeek` 生成目标专用的 GitHub 更新元数据。发布工作流会在原生 runner 上构建 macOS arm64、macOS x64 和 Windows x64，校验发布标签，收集每个安装包和更新产物，记录校验和，并且只在全部打包任务成功后创建 GitHub Release。
 
-Desktop 打包会为 macOS、Windows 和 Linux 目标显式使用保留的原生图标文件，因此安装后的应用会保持产品图标，而不会回退到 Electron 默认图标。
+Desktop 打包使用上游 macOS 和 Windows 的原生图标资源，因此安装后的应用会保持产品图标，而不会回退到 Electron 默认图标。
+
+OpenSeek 尚无响应 `/api/v0/check_client_update` 的 HTTPS 服务。所有者明确批准仅对与版本绑定的 OpenSeek 安装包省略强制更新策略。安装后的应用不会强制执行远程最低版本要求。macOS App 会在发布前嵌入并验证与架构对应的 GitHub 更新源；安装后的 updater 保留该通道，不会改用签名发布的 Nightly 更新源。未设置 `OPENSEEK_DESKTOP_RELEASE` 时，上游签名打包在准备或签名前仍要求策略源站。
 
 选择器会校验 Desktop manifest 版本，因此后续 Release 不会仅因缺少签名变量就继承无证书发布。未设置该选择器的构建保留上游签名发布配置，并要求其 Apple 或 Windows 发布环境。
 
@@ -44,4 +46,4 @@ Cloudflare 预览部署会保持关闭，直到 OpenSeek 设置 `DSH_CLOUDFLARE_
 
 ## Consequences
 
-用户可以从 OpenSeek Release 下载匹配的 macOS 和 Windows 安装程序。由于安装包不提供平台发布者身份，Gatekeeper 和 SmartScreen 可能会显示警告。`0.1.14` 之后的 Release 必须审查并修改发布值、测试、工作流和文档；取得平台证书仍是进行可信分发的路径。
+用户可以从 OpenSeek Release 下载匹配的 macOS 和 Windows 安装程序。由于安装包不提供平台发布者身份，Gatekeeper 和 SmartScreen 可能会显示警告。`0.1.15` 之后的 Release 必须审查并修改发布值、测试、工作流和文档；取得平台证书仍是进行可信分发的路径。
