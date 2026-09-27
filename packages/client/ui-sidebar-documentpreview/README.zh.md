@@ -82,7 +82,7 @@ CSV 和 TSV 默认使用表格查看器，也可选择纯文本；CSV 还提供�
 | `excel.maxCells` | `250000` | 所有工作表矩形区域的最大合计单元格数，包含空单元格 |
 | `excel.timeoutMs` | `15000` | 解析 Worker 的最长存活时间，单位毫秒 |
 
-惰性 Excel chunk 打包 FortuneSheet、用于 XLSX 的 ExcelJS、用于 XLS 的 SheetJS CE，以及用于 CSV/TSV 的 PapaParse。包内独立于 React 的适配层将解析结果直接映射为 FortuneSheet 单元格，并复用单元格格式化和初始选区。第三方许可证文本保留在发布的 chunk 中；SheetJS CE 保留其 Apache-2.0 条款。每次解析拥有一个独立可释放的 Worker，并传输所保留文件字节的副本；内容替换、卸载、失败或超时都会终止该 Worker。样式表仅作用于 Excel 预览区域。暂不支持图表、绘图/图片、数据透视表、条件格式、编辑、重新计算和导出；字体可用性、Excel 列宽近似和主题色明暗近似会影响保真度。超链接显示为文本，不加载目标地址。ExcelJS 会再次解码 XLSX 字符串公式缓存结果中的实体写法；保存的字面文本 `&lt;` 会显示为 `<`。
+惰性 Excel chunk 打包 FortuneSheet、用于 XLSX 的 ExcelJS、用于 XLS 的 SheetJS CE，以及用于 CSV/TSV 的 PapaParse。包内独立于 React 的适配层将解析结果直接映射为 FortuneSheet 单元格，并复用单元格格式化和初始选区。第三方许可证文本保留在发布的 chunk 中；SheetJS CE 保留其 Apache-2.0 条款。每次解析拥有一个独立可释放的 Worker，并传输所保留文件字节的副本；内容替换、卸载、失败或超时都会终止该 Worker。文件地址决定已挂载工作簿的身份，因此切换文件时会重置 FortuneSheet 选区，即使 React 跳过中间的加载画面；调整同一文件的尺寸则保留已挂载的工作簿。样式表仅作用于 Excel 预览区域。暂不支持图表、绘图/图片、数据透视表、条件格式、编辑、重新计算和导出；字体可用性、Excel 列宽近似和主题色明暗近似会影响保真度。超链接显示为文本，不加载目标地址。ExcelJS 会再次解码 XLSX 字符串公式缓存结果中的实体写法；保存的字面文本 `&lt;` 会显示为 `<`。
 
 只读公式栏以单行按字面显示公式和单元格文本，长内容可横向滚动。复制时保留 HTML 表格，并转义单元格内容，包括已保存的公式结果。[FortuneSheet 补丁决策](../../../.agents/notes/implemented/feature/2026-09-16-browser-excel-preview.zh.md)说明升级依赖时保留这些行为与工作表选区的要求。
 

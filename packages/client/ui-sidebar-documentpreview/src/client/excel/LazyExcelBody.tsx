@@ -16,7 +16,7 @@ export type LoadedExcelBodyProps = ExcelBodyProps & { readonly format: ExcelForm
 const LoadedExcelBody = lazy(async () => ({ default: (await import('./excel.tsx')).ExcelBody }))
 
 /**
- * Load the browser spreadsheet renderer for every registered format.
+ * Load one browser spreadsheet renderer per file address and registered format.
  * @param props - Complete file bytes and standard document seats.
  * @returns Localized loading state or Excel preview.
  */
@@ -24,6 +24,6 @@ export function LazyExcelBody(props: ExcelBodyProps): ReactNode {
   const format = excelFormat(hostFileOf(props.resourceAddress).path)
   const loading = <LoadingIndicator label={props.t('loading')} />
   return <Suspense fallback={loading}>
-    <LoadedExcelBody {...props} format={format} loading={loading} />
+    <LoadedExcelBody key={props.resourceAddress} {...props} format={format} loading={loading} />
   </Suspense>
 }

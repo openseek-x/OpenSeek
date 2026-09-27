@@ -44,6 +44,16 @@ it('refreshes the existing workbook on pane resize and disconnects on file repla
   expect(observers[1]!.disconnect).toHaveBeenCalledOnce()
 })
 
+it('remounts the workbook when the file address changes even if bytes are reused', async () => {
+  mocked.parse.mockResolvedValue(value)
+  const view = render(<LazyExcelBody {...props} />)
+  await waitFor(() => { expect(mocked.parse).toHaveBeenCalledOnce() })
+  const previous = mocked.parse.mock.calls[0]![3] as AbortSignal
+  view.rerender(<LazyExcelBody {...props} resourceAddress='dsh-resource://file/session/s1/meeting.xlsx' />)
+  await waitFor(() => { expect(mocked.parse).toHaveBeenCalledTimes(2) })
+  expect(previous.aborted).toBe(true)
+})
+
 it('shows loading then a workbook with editing and recalculation disabled', async () => {
   mocked.parse.mockResolvedValue(formulaValue)
   const view = render(<ExcelBody {...loadedProps} />)

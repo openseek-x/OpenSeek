@@ -264,6 +264,7 @@ it.skipIf(MODE === 'record').each(['en-US', 'zh-CN'])('fills the spreadsheet pan
     const tabScroller = excel.locator('.fortune-sheettab-container-c')
     const activeSheet = excel.locator('.luckysheet-sheets-item-active .luckysheet-sheets-item-name')
     await expect.poll(() => activeSheet.innerText()).toBe('会议信息')
+    expect(await originalCanvas.evaluate(node => node.isConnected)).toBe(false)
     const meetingCanvas = await canvas.elementHandle()
     if (meetingCanvas === null) throw new Error('meeting spreadsheet canvas is unavailable')
     await expectExcelLayout(excel)
