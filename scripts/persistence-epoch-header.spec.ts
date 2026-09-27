@@ -15,7 +15,9 @@ function property(nodes: readonly SchemaNode[], index: number, name: string): nu
   return field.type
 }
 
-it('requires a version bump before request headers can carry retired system text', { timeout: 60_000 }, () => {
+// The coverage coordinator grants a larger budget for this full-repository compiler program.
+const schemaTimeout = Number(process.env.DSH_COVERAGE_TEST_TIMEOUT_MS ?? 60_000)
+it('requires a version bump before request headers can carry retired system text', { timeout: schemaTimeout }, () => {
   const inventory = extractPersistenceSchema(resolve(import.meta.dirname, '..'))
   const before = inventory.roots.find(root => root.key === 'event:request/header')
   if (before === undefined) throw new Error('generated schema omits request/header')
