@@ -146,6 +146,7 @@ describe('desktop macOS release signature', () => {
     expect(isOpenSeekRelease(environment)).toBe(true)
     const config = createElectronBuilderConfig(environment, 'darwin', 'arm64')
     expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    expect(config.extraMetadata).toHaveProperty('dshDesktopGitHubUpdate', true)
     expect(config).toMatchObject({
       mac: { identity: '-', forceCodeSigning: false, notarize: false },
       dmg: { sign: false },

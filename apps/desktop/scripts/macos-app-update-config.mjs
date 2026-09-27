@@ -22,40 +22,42 @@ function nonEmptyString(value, label) {
 }
 
 /**
- * Resolve the one generic macOS feed from the final electron-builder configuration.
+ * Resolve the signed Nightly or version-bound OpenSeek feed from electron-builder configuration.
  * @param {unknown} publish - Final electron-builder publish setting.
- * @returns {{ publicUrl: string }} Resolved feed used by the packaged App.
+ * @returns {import('./macos-app-update-config.d.mts').MacOSAppUpdateFeed} Resolved feed used by the packaged App.
  */
 export function resolveMacOSAppUpdateFeed(publish) {
   if (!Array.isArray(publish) || publish.length !== 1) {
     throw new Error('desktop macOS update config: publish must contain exactly one provider')
   }
   const provider = object(publish[0], 'publish provider')
-  if (provider.provider !== 'generic' || provider.channel !== CHANNEL) {
-    throw new Error('desktop macOS update config: publish provider must be generic Nightly')
+  if (provider.provider === 'generic' && provider.channel === CHANNEL) {
+    return { publicUrl: nonEmptyString(provider.url, 'publish provider URL') }
   }
-  return { publicUrl: nonEmptyString(provider.url, 'publish provider URL') }
+  if (provider.provider === 'github' && provider.owner === 'openseek-x' && provider.repo === 'OpenSeek'
+    && /^latest-(?:arm64|x64)$/u.test(provider.channel)) {
+    return { provider: 'github', owner: provider.owner, repo: provider.repo, channel: provider.channel }
+  }
+  throw new Error('desktop macOS update config: publish provider must be generic Nightly or OpenSeek GitHub')
 }
 
 /**
  * Create the electron-updater configuration embedded before code signing.
- * @param {{ publicUrl: string }} update - Resolved update feed.
+ * @param {import('./macos-app-update-config.d.mts').MacOSAppUpdateFeed} update - Resolved update feed.
  * @param {string} updaterCacheDirName - electron-builder application cache directory.
- * @returns {{ provider: 'generic', url: string, channel: 'nightly', updaterCacheDirName: string }} Packaged updater fields.
+ * @returns {import('./macos-app-update-config.d.mts').MacOSAppUpdateConfig} Packaged updater fields.
  */
 export function createMacOSAppUpdateConfig(update, updaterCacheDirName) {
-  return {
-    provider: 'generic',
-    url: nonEmptyString(update.publicUrl, 'public URL'),
-    channel: CHANNEL,
-    updaterCacheDirName: nonEmptyString(updaterCacheDirName, 'updater cache directory'),
-  }
+  const cache = nonEmptyString(updaterCacheDirName, 'updater cache directory')
+  return 'publicUrl' in update
+    ? { provider: 'generic', url: nonEmptyString(update.publicUrl, 'public URL'), channel: CHANNEL, updaterCacheDirName: cache }
+    : { ...update, updaterCacheDirName: cache }
 }
 
 /**
  * Write the updater configuration into an assembled App before signing.
  * @param {string} resourcesDir - App Contents/Resources directory.
- * @param {{ publicUrl: string }} update - Resolved update feed.
+ * @param {import('./macos-app-update-config.d.mts').MacOSAppUpdateFeed} update - Resolved update feed.
  * @param {string} updaterCacheDirName - electron-builder application cache directory.
  * @returns {Promise<void>} Resolves after the configuration is durable.
  */
@@ -81,10 +83,11 @@ export async function verifyMacOSAppUpdateConfig(appPath, update, updaterCacheDi
     throw new Error(`desktop macOS update config: cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
   const config = object(parsed, CONFIG_FILENAME)
-  if (config.provider !== 'generic' || config.url !== update.publicUrl || config.channel !== CHANNEL) {
-    throw new Error(`desktop macOS update config: ${path} does not match ${update.publicUrl}`)
-  }
   const actualCacheDirName = nonEmptyString(config.updaterCacheDirName, `${CONFIG_FILENAME}.updaterCacheDirName`)
+  const expected = createMacOSAppUpdateConfig(update, actualCacheDirName)
+  if (Object.entries(expected).some(([field, value]) => config[field] !== value)) {
+    throw new Error(`desktop macOS update config: ${path} does not match the selected release feed`)
+  }
   if (updaterCacheDirName !== undefined && actualCacheDirName !== updaterCacheDirName) {
     throw new Error(`desktop macOS update config: ${path} has updater cache directory ${actualCacheDirName}; expected ${updaterCacheDirName}`)
   }

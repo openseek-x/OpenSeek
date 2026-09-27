@@ -47,7 +47,7 @@ describe('desktop release metadata', () => {
 const coordinators: InstanceType<typeof DesktopUpdateCoordinator>[] = []
 afterEach(() => { for (const item of coordinators.splice(0)) item.dispose() })
 
-function fixture() {
+function fixture(packagedGitHubChannel = false) {
   const events = new EventEmitter()
   const checkForUpdates = vi.fn(async () => ({
     isUpdateAvailable: true,
@@ -65,13 +65,20 @@ function fixture() {
   const updater = Object.assign(events, { checkForUpdates, downloadUpdate, quitAndInstall }) as unknown as AppUpdater
   const coordinator = new DesktopUpdateCoordinator(
     (state) => { states.push(state); return state },
-    beforeRestart, updater, () => true, () => '1.1.0-alpha.1',
+    beforeRestart, updater, () => true, () => '1.1.0-alpha.1', packagedGitHubChannel,
   )
   coordinators.push(coordinator)
   return { coordinator, updater, events, states, checkForUpdates, downloadUpdate, quitAndInstall, beforeRestart }
 }
 
 describe('desktop update coordinator', () => {
+  it('keeps the packaged OpenSeek GitHub channel instead of selecting Nightly', () => {
+    const f = fixture(true)
+    expect(f.updater.channel).toBeUndefined()
+    expect(f.updater.allowPrerelease).toBe(false)
+    expect(f.updater.allowDowngrade).toBe(false)
+  })
+
   it('keeps safe preparation diagnostics separate and clears them on an explicit retry', async () => {
     const f = fixture()
     await f.coordinator.check()

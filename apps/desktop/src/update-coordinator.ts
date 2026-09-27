@@ -45,6 +45,7 @@ export class DesktopUpdateCoordinator {
    * @param updater - Process-owned Electron updater, replaceable at the network/platform test boundary.
    * @param enabled - Whether this process has a packaged update source.
    * @param currentVersion - Actual installed application version.
+   * @param packagedGitHubChannel - Retain the channel embedded in OpenSeek's packaged updater feed.
    */
   constructor(
     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
@@ -52,6 +53,7 @@ export class DesktopUpdateCoordinator {
     private readonly updater: AppUpdater = autoUpdater,
     private readonly enabled: () => boolean = () => app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
     private readonly currentVersion: () => string = () => app.getVersion(),
+    packagedGitHubChannel = false,
   ) {
     if (updater === autoUpdater) {
       // electron-updater omits this internal transport property from its public declarations.
@@ -64,8 +66,8 @@ export class DesktopUpdateCoordinator {
     }
     this.updater.autoDownload = false
     this.updater.autoInstallOnAppQuit = false
-    this.updater.channel = 'nightly'
-    this.updater.allowPrerelease = true
+    if (!packagedGitHubChannel) this.updater.channel = 'nightly'
+    this.updater.allowPrerelease = !packagedGitHubChannel
     // Selecting a channel can enable downgrade in electron-updater.
     this.updater.allowDowngrade = false
     this.updater.on('download-progress', this.onProgress)

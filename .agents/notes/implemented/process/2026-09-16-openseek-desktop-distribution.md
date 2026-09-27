@@ -14,7 +14,7 @@ OpenSeek ships the upstream Desktop implementation with the complete `dsh` famil
 
 The Desktop package uses the upstream native macOS and Windows icon resources so the installed application keeps its product icon rather than Electron's fallback icon.
 
-OpenSeek has no HTTPS service for `/api/v0/check_client_update`. The owner explicitly approved omitting mandatory-update policy only from version-bound OpenSeek packages. Their installed applications do not enforce remote minimum versions, while the ordinary GitHub updater remains configured. Without `OPENSEEK_DESKTOP_RELEASE`, the upstream signed package still requires a policy origin before preparation or signing.
+OpenSeek has no HTTPS service for `/api/v0/check_client_update`. The owner explicitly approved omitting mandatory-update policy only from version-bound OpenSeek packages. Their installed applications do not enforce remote minimum versions. The macOS App embeds and verifies the architecture-specific GitHub feed before publication; the installed updater preserves that channel instead of selecting the signed release's Nightly feed. Without `OPENSEEK_DESKTOP_RELEASE`, the upstream signed package still requires a policy origin before preparation or signing.
 
 The selector checks the Desktop manifest version, so a later release cannot inherit certificate-free publication solely because signing variables are absent. Builds without the selector retain the upstream signed release configuration and require its Apple or Windows release environment.
 

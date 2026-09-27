@@ -35,6 +35,21 @@ describe('macOS packaged updater configuration', () => {
     }
   })
 
+  it('embeds and verifies the OpenSeek architecture-specific GitHub feed', async () => {
+    const paths = await fixture()
+    const feed = { provider: 'github', owner: 'openseek-x', repo: 'OpenSeek', channel: 'latest-arm64' } as const
+    expect(resolveMacOSAppUpdateFeed([feed])).toEqual(feed)
+    expect(createMacOSAppUpdateConfig(feed, 'deepseek-harness-updater')).toEqual({
+      ...feed, updaterCacheDirName: 'deepseek-harness-updater',
+    })
+    await writeMacOSAppUpdateConfig(paths.resourcesDir, feed, 'deepseek-harness-updater')
+    await expect(verifyMacOSAppUpdateConfig(paths.appPath, feed, 'deepseek-harness-updater')).resolves.toBeUndefined()
+    await expect(verifyMacOSAppUpdateConfig(paths.appPath, { ...feed, channel: 'latest-x64' }))
+      .rejects.toThrow(/macOS update config/u)
+    expect(() => resolveMacOSAppUpdateFeed([{ ...feed, channel: 'nightly' }]))
+      .toThrow(/macOS update config/u)
+  })
+
   it('writes and verifies the fixed release feed before signing', async () => {
     const paths = await fixture()
     expect(createMacOSAppUpdateConfig(update, 'deepseek-harness-updater')).toEqual({

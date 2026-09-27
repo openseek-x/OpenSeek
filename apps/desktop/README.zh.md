@@ -211,7 +211,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 ### OpenSeek 分发
 
-OpenSeek `0.1.15` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.15`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。OpenSeek 尚无响应 `/api/v0/check_client_update` 的策略服务；显式选择此模式后，打包不会嵌入强制更新策略，安装后的应用也不会强制执行远程最低版本要求。普通 GitHub 更新检查仍可使用。未设置该选择器的构建仍要求有效策略源站。
+OpenSeek `0.1.15` Release 会设置 `OPENSEEK_DESKTOP_RELEASE=0.1.15`。该精确值允许生成 ad-hoc 签名的 macOS 应用和未签名的 Windows 安装程序，把已验证的产物发布到 OpenSeek GitHub Release，并配置对应的 GitHub 更新通道。该保护会拒绝其他值，或拒绝与 Desktop manifest 版本不一致的值。OpenSeek 尚无响应 `/api/v0/check_client_update` 的策略服务；显式选择此模式后，打包不会嵌入强制更新策略，安装后的应用也不会强制执行远程最低版本要求。普通 GitHub 更新检查仍可使用：macOS App 会嵌入与架构对应的 GitHub 更新源，updater 保留该通道。未设置该选择器的构建仍要求有效策略源站。
 
 这些安装包包含 macOS 和 Windows 的 Desktop 应用图标，但不具有 Apple Developer ID、macOS notarization 或 Windows Authenticode 身份。Gatekeeper 和 SmartScreen 可能在安装前显示警告。后续 OpenSeek Release 必须显式修改源码中的版本绑定值及其工作流校验；缺少证书配置不会自动选择此分发模式。
 
@@ -372,7 +372,7 @@ pnpm run prepare:desktop
 
 每条打包命令都会构建仓库，打包以 dsh 和私有 Desktop Host 为根的第一方生产依赖闭包，并准备目标专用的 Electron 分发包与 pnpm CLI。`prepare:dsh` 在构建时安装一次生产依赖图，准备物化包供 electron-builder 归档到 `app.asar/dsh`，移除包管理器元数据，并生成包含共享包版本和最终文件哈希的 `desktop-runtime.json`。在 macOS 上，它先签名并验证原生文件，再生成清单；electron-builder 不对已签名的此目录重复进行嵌套签名。资源映射明确包含默认根目录过滤器会忽略的 `dsh/node_modules`；准备完成的运行时清单在原生签名后检查。原生可执行文件及库解包到 ASAR 旁；Python、独立 Node 和 pnpm 保留在外部 runtime 资源中。Windows 打包逐项检查准备好的 PE，确认其 ASAR 条目已标记为解包，且磁盘副本字节一致；未签名构建也执行此检查。Builder glob 规则用单字符通配符匹配 PE 文件名中的花括号，因此同目录中名称匹配的文件也可能被解包。准备好的运行时 smoke 沿用已验证的目标描述符，不使用构建宿主的架构。签名安装包、公证、已安装应用升级和各目标原生模块的验收需要发布环境。
 
-macOS 打包在组装 App 时、代码签名前写入 `Contents/Resources/app-update.yml`，供并行 ZIP 与 DMG 路线使用的目录构建也执行此操作。签名钩子验证准确的更新源和 updater 缓存目录。写入发布完成记录前，流程会再次检查两条路线的副本和最终移入的 App；配置缺失或不匹配会阻止移入产物，因而也会阻止上传。
+macOS 打包在组装 App 时、代码签名前写入 `Contents/Resources/app-update.yml`，供并行 ZIP 与 DMG 路线使用的目录构建也执行此操作。签名钩子验证准确的更新源和 updater 缓存目录。签名发布会在记录完成前再次检查两条路线的副本和最终移入的 App；OpenSeek 会在 ad-hoc 签名后检查 GitHub 更新源。配置缺失或不匹配会阻止发布。
 
 未压缩产物包含 Electron、物化后的 dsh 生产依赖树、pnpm，以及壳应用。安装包大小与文件系统占用不同；发布验收需要测量两者，以及 profile 插件存储和首次启动耗时。此布局用更多应用内文件换取消除用户机器上的核心包安装过程。
 
@@ -382,7 +382,7 @@ Windows 下载完成后的更新确认说明应用会在安装期间关闭、完
 
 原生更新浮层在文档就绪且父窗口可见时显示，并在父窗口再次显示时恢复。关闭浮层会释放输入拦截和父窗口监听。[本地窗口验证](tests/README.zh.md#verification-overlay)无需启动工作区即可检查这些切换。
 
-打包应用在启动后异步检查固定 Nightly。常规轮询以十分钟为基础间隔，每次独立采样 ±20% 的随机抖动。每次检查失败将基础延迟翻倍，上限为一小时；成功后重置。随机延迟不超过该上限，并从全部复用调用结算后开始计时。本地化的“检查更新…”菜单项（Windows 可从顶栏的“应用”菜单进入）立即执行，并复用正在进行的检查。回到前台和系统恢复时遵守相同的单调时钟截止时间。新收到的强更策略也会立即请求检查更新清单。自动检查从不弹窗或下载安装包。手动检查显示正在检查、失败或包含已安装版本号的无更新反馈。常规更新弹窗原位渐入渐出；连续弹窗替换卡片内容并重置其滚动位置，保留黑色半透明蒙层，不模糊父页面。
+签名打包应用在启动后异步检查固定 Nightly；OpenSeek 安装包检查与架构对应的 GitHub Release 通道。常规轮询以十分钟为基础间隔，每次独立采样 ±20% 的随机抖动。每次检查失败将基础延迟翻倍，上限为一小时；成功后重置。随机延迟不超过该上限，并从全部复用调用结算后开始计时。本地化的“检查更新…”菜单项（Windows 可从顶栏的“应用”菜单进入）立即执行，并复用正在进行的检查。回到前台和系统恢复时遵守相同的单调时钟截止时间。新收到的强更策略也会立即请求检查更新清单。自动检查从不弹窗或下载安装包。手动检查显示正在检查、失败或包含已安装版本号的无更新反馈。常规更新弹窗原位渐入渐出；连续弹窗替换卡片内容并重置其滚动位置，保留黑色半透明蒙层，不模糊父页面。
 
 `DSH_DESKTOP_UPDATE_CHECK_INTERVAL_MS` 配置常规基础间隔，`DSH_DESKTOP_UPDATE_CHECK_MAX_BACKOFF_MS` 配置上限；两者均接受 1000 至 2147483647 的整数毫秒数，且上限不能小于间隔。省略上限时取一小时与间隔中的较大值。`DSH_DESKTOP_UPDATE_CHECK_JITTER` 配置 0 至 1 的抖动比例，默认 `0.2`；最终延迟至少一秒，且不超过上限。这些配置不改变强更策略轮询，也不授权下载重试。
 

@@ -1,17 +1,15 @@
-/** Resolved fields required to embed a macOS updater feed. */
-export interface MacOSAppUpdateFeed {
-  readonly publicUrl: string
-}
+/** Feed selected by the signed release or version-bound OpenSeek distribution. */
+export type MacOSAppUpdateFeed =
+  | { readonly publicUrl: string }
+  | { readonly provider: 'github', readonly owner: 'openseek-x', readonly repo: 'OpenSeek', readonly channel: string }
 
 /** Packaged electron-updater configuration for macOS. */
-export interface MacOSAppUpdateConfig {
-  readonly provider: 'generic'
-  readonly url: string
-  readonly channel: 'nightly'
-  readonly updaterCacheDirName: string
-}
+export type MacOSAppUpdateConfig =
+  | { readonly provider: 'generic', readonly url: string, readonly channel: 'nightly', readonly updaterCacheDirName: string }
+  | { readonly provider: 'github', readonly owner: 'openseek-x', readonly repo: 'OpenSeek',
+      readonly channel: string, readonly updaterCacheDirName: string }
 
-/** Resolve the one generic macOS feed from the final electron-builder configuration. */
+/** Resolve the signed Nightly or version-bound OpenSeek feed from electron-builder configuration. */
 export function resolveMacOSAppUpdateFeed(publish: unknown): MacOSAppUpdateFeed
 
 /** Create the electron-updater configuration embedded before code signing. */

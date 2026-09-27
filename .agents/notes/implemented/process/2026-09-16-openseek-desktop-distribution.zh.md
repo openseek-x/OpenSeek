@@ -14,7 +14,7 @@ OpenSeek 发布版本为 `0.1.15` 的完整上游 Desktop 实现和 `dsh` 包族
 
 Desktop 打包使用上游 macOS 和 Windows 的原生图标资源，因此安装后的应用会保持产品图标，而不会回退到 Electron 默认图标。
 
-OpenSeek 尚无响应 `/api/v0/check_client_update` 的 HTTPS 服务。所有者明确批准仅对与版本绑定的 OpenSeek 安装包省略强制更新策略。安装后的应用不会强制执行远程最低版本要求，但仍配置普通 GitHub 更新。未设置 `OPENSEEK_DESKTOP_RELEASE` 时，上游签名打包在准备或签名前仍要求策略源站。
+OpenSeek 尚无响应 `/api/v0/check_client_update` 的 HTTPS 服务。所有者明确批准仅对与版本绑定的 OpenSeek 安装包省略强制更新策略。安装后的应用不会强制执行远程最低版本要求。macOS App 会在发布前嵌入并验证与架构对应的 GitHub 更新源；安装后的 updater 保留该通道，不会改用签名发布的 Nightly 更新源。未设置 `OPENSEEK_DESKTOP_RELEASE` 时，上游签名打包在准备或签名前仍要求策略源站。
 
 选择器会校验 Desktop manifest 版本，因此后续 Release 不会仅因缺少签名变量就继承无证书发布。未设置该选择器的构建保留上游签名发布配置，并要求其 Apple 或 Windows 发布环境。
 
